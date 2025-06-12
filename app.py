@@ -21,6 +21,8 @@ This app helps create an optimal exam timetable while considering various constr
 - Special accommodations for students with extra time
 - Fixed exam dates
 - Bank holidays
+- Room assignments
+- AEA requirements
 """)
 
 # File upload section
@@ -39,18 +41,80 @@ st.header("Timetabling Parameters")
 col1, col2 = st.columns(2)
 
 with col1:
-    num_days = st.number_input("Number of Days for Exam Period", min_value=1, max_value=30, value=21)
+    num_days = st.number_input("Number of Days for Exam Period", min_value=1, max_value=30, value=20)
     max_exams_2days = st.number_input("Maximum Exams in 2-Day Window", min_value=1, max_value=5, value=3)
     max_exams_5days = st.number_input("Maximum Exams in 5-Day Window", min_value=1, max_value=10, value=4)
 
 with col2:
     week3_penalty = st.slider("Week 3 Penalty Weight", min_value=0, max_value=10, value=5)
     spread_penalty = st.slider("Exam Spacing Penalty Weight", min_value=0, max_value=10, value=5)
+    extra_time_penalty = st.slider("Extra Time Student Penalty Weight", min_value=0, max_value=10, value=5)
+
+# Fixed modules dictionary
+Fixed_modules = {
+    "BUSI60039 Business Strategy": [1,1],
+    "BUSI60046 Project Management": [2,1],
+    "ME-ELEC70098 Optimisation": [3,0],
+    "MECH70001 Nuclear Thermal Hydraulics": [3,0],
+    "BUSI60040/BUSI60043 Corporate Finance Online/Finance & Financial Management": [3,1],
+    "MECH60004/MECH70042 Introduction to Nuclear Energy A/B": [4,0],
+    "ME-ELEC70022 Modelling and Control of Multi-body Mechanical Systems": [4,0],
+    "MATE97022 Nuclear Materials 1": [4,0],
+    "ME-MATE70029 Nuclear Fusion": [9,0],
+    "MECH70002 Nuclear Reactor Physics": [10,0],
+    "ME-ELEC70076 Sustainable Electrical Systems": [10,0],
+    "ME ELEC70066 Applied Advanced Optimisation": [10,0],
+    "MECH70020 Combustion, Safety and Fire Dynamics": [11,0],
+    "BIOE70016 Human Neuromechanical Control and Learning": [11,0],
+    "CENG60013 Nuclear Chemical Engineering": [11,0],
+    "MECH70008 Mechanical Transmissions Technology": [17,1],
+    "MECH70006 Metal Processing Technology": [17,1],
+    "MECH70021Aircraft Engine Technology": [17,1],
+    "MECH70003 Future Clean Transport Technology": [17,1],
+    "MECH60015/70030 PEN3/AME": [18,1]
+}
+
+# Core modules list
+Core_modules = [
+    "MECH70001 Nuclear Thermal Hydraulics",
+    "MECH60004/MECH70042 Introduction to Nuclear Energy A/B",
+    "MECH70002 Nuclear Reactor Physics",
+    "MECH70008 Mechanical Transmissions Technology",
+    "MECH70006 Metal Processing Technology",
+    "MECH70021Aircraft Engine Technology",
+    "MECH70003 Future Clean Transport Technology",
+    "MECH60015/70030 PEN3/AME"
+]
+
+# Room dictionary with capacities and features
+rooms = {
+    'CAGB 203': [["Computer", "SEQ","AEA"], 65],
+    'CAGB 309': [["SEQ"], 54],
+    'CAGB 659-652': [["SEQ"], 75],
+    'CAGB 747-748': [["SEQ"], 36],
+    'CAGB 749-752': [["SEQ"], 75],
+    'CAGB 761': [["Computer"], 25],
+    'CAGB 762': [["Computer"], 25],
+    'SKEM 208': [["Computer"], 35],
+    'SKEM 317': [["Computer"], 20],
+    'CAGB 320-321': [["AEA"], 10],
+    'CAGB 305': [["AEA"], 4],
+    'CAGB 349': [["AEA"], 2],
+    'CAGB 311': [["AEA"], 1],
+    'CAGB 765': [["AEA"], 10],
+    'CAGB 527': [["AEA"], 2]
+}
+
+def ordinal(n):
+    if 11 <= (n % 100) <= 13:
+        return f"{n}th"
+    else:
+        return f"{n}{['th','st','nd','rd','th','th','th','th','th','th'][n % 10]}"
 
 def process_files():
     if not all([student_file, module_file, dates_file]):
         st.error("Please upload all required files")
-        return None, None, None, None, None, None
+        return None, None, None, None, None, None, None, None, None
 
     try:
         # Read student data
@@ -65,18 +129,24 @@ def process_files():
 
         # Extract exams from student data
         exams = students_df.iloc[0, 9:].dropna().tolist()
-        exams.append('MECH60015 / MECH70030 Professional Engineering Skills (ME3/AME) (ECE exam)')
 
         # Create student-exam dictionary
         student_exams = {}
         student_rows = students_df.iloc[2:, :]
+        
+        # Get AEA students
+        valid_aea_mask = (
+            student_rows.iloc[:, 3].notna() &
+            (student_rows.iloc[:, 3].astype(str).str.strip() != "#N/A")
+        )
+        AEA = student_rows.loc[valid_aea_mask, student_rows.columns[0]].tolist()
+
         for _, row in student_rows.iterrows():
             cid = row[0]
             exams_taken = []
-            for col_idx, exam_name in enumerate(exams[:-1], start=9):
-                if str(row[col_idx]).strip().lower() == 'x':
+            for col_idx, exam_name in enumerate(exams, start=9):
+                if str(row[col_idx]).strip().lower() in ['x', 'a', 'b']:
                     exams_taken.append(exam_name)
-            exams_taken.append('MECH60015 / MECH70030 Professional Engineering Skills (ME3/AME) (ECE exam)')
             student_exams[cid] = exams_taken
 
         # Process module leaders
@@ -137,23 +207,39 @@ def process_files():
         while first_monday.weekday() != 0:
             first_monday += timedelta(days=1)
 
-        no_exam_dates = [[5,0],[5,1],[6,0],[6,1],[12,0],[12,1],[13,0],[13,1],[20,0]]
+        # Create days list with proper formatting
+        days = []
+        for i in range(21):
+            date = first_monday + timedelta(days=i)
+            day_str = date.strftime("%A ") + ordinal(date.day) + date.strftime(" %B")
+            days.append(day_str)
+
+        no_exam_dates = [[5,0],[5,1],[6,0],[6,1],[12,0],[12,1],[13,0],[13,1],[18,0],[19,0],[19,1],[20,0],[20,1]]
         for name, bh_date in bank_holidays:
             delta = (bh_date - first_monday).days
             if 0 <= delta <= 20:
                 no_exam_dates.append([delta, 0])
                 no_exam_dates.append([delta, 1])
 
-        return exams, student_exams, dict(leader_courses), no_exam_dates, extra_time_students_25, extra_time_students_50
+        # Calculate exam counts for AEA and non-AEA students
+        exam_counts = defaultdict(lambda: [0, 0])
+        for cid, exams_taken in student_exams.items():
+            if cid in AEA:
+                for exam in exams_taken:
+                    exam_counts[exam][0] += 1
+            else:
+                for exam in exams_taken:
+                    exam_counts[exam][1] += 1
+
+        return exams, student_exams, dict(leader_courses), no_exam_dates, extra_time_students_25, extra_time_students_50, AEA, exam_counts, days
 
     except Exception as e:
         st.error(f"Error processing files: {str(e)}")
-        return None, None, None, None, None, None
+        return None, None, None, None, None, None, None, None, None
 
-def create_timetable(exams, student_exams, leader_courses, no_exam_dates, extra_time_students_25, extra_time_students_50):
+def create_timetable(exams, student_exams, leader_courses, no_exam_dates, extra_time_students_25, extra_time_students_50, AEA, exam_counts, days):
     model = cp_model.CpModel()
     slots = [0, 1]  # 0 for morning, 1 for afternoon
-    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] * 3
     num_slots = len(slots)
 
     # Variables
@@ -163,61 +249,85 @@ def create_timetable(exams, student_exams, leader_courses, no_exam_dates, extra_
         exam_day[exam] = model.NewIntVar(0, num_days - 1, f'{exam}_day')
         exam_slot[exam] = model.NewIntVar(0, num_slots - 1, f'{exam}_slot')
 
-    # Constraint 1: No more than 3 exams in a 2-day window
-    for student in student_exams:
-        for d in range(num_days - 1):
-            exams_in_2_days = []
-            for exam in student_exams[student]:
-                is_on_d = model.NewBoolVar(f'{student}_{exam}_on_day_{d}')
-                is_on_d1 = model.NewBoolVar(f'{student}_{exam}_on_day_{d+1}')
-                is_in_either = model.NewBoolVar(f'{student}_{exam}_on_day_{d}_or_{d+1}')
+    # Room assignment variables
+    exam_room = {}
+    for exam in exams:
+        for room in rooms:
+            exam_room[(exam, room)] = model.NewBoolVar(f'{exam}_in_{room.replace(" ", "_")}')
 
-                model.Add(exam_day[exam] == d).OnlyEnforceIf(is_on_d)
-                model.Add(exam_day[exam] != d).OnlyEnforceIf(is_on_d.Not())
-                model.Add(exam_day[exam] == d+1).OnlyEnforceIf(is_on_d1)
-                model.Add(exam_day[exam] != d+1).OnlyEnforceIf(is_on_d1.Not())
-
-                model.AddBoolOr([is_on_d, is_on_d1]).OnlyEnforceIf(is_in_either)
-                model.AddBoolAnd([is_on_d.Not(), is_on_d1.Not()]).OnlyEnforceIf(is_in_either.Not())
-
-                exams_in_2_days.append(is_in_either)
-
-            model.Add(sum(exams_in_2_days) <= max_exams_2days)
-
-    # Constraint 2: No more than 4 exams in a 5-day window
-    for student in student_exams:
-        for start_day in range(num_days - 4):
-            exams_in_window = []
-            for exam in student_exams[student]:
-                in_window = model.NewBoolVar(f'{student}_{exam}_in_day_{start_day}_to_{start_day+4}')
-                model.AddLinearConstraint(exam_day[exam], start_day, start_day + 4).OnlyEnforceIf(in_window)
-                exams_in_window.append(in_window)
-            model.Add(sum(exams_in_window) <= max_exams_5days)
-
-    # Constraint 3: Core modules can't be on the same day as other modules
-    Core_modules = ["MECH70001 Nuclear Thermal Hydraulics", "MECH60004/MECH70042 Introduction to Nuclear Energy A/B",
-                   "MECH70002 Nuclear Reactor Physics", "MECH70008 Mechanical Transmissions Technology",
-                   "MECH70006 Metal Processing Technology", "MECH70021Aircraft Engine Technology",
-                   "MECH70003 Future Clean Transport Technology",
-                   "MECH60015 / MECH70030 Professional Engineering Skills (ME3/AME) (ECE exam)"]
-
-    for student, exams_list in student_exams.items():
-        core_mods = [exam for exam in exams_list if exam in Core_modules]
-        other_mods = [exam for exam in exams_list if exam not in Core_modules]
+    # Constraint 1: Core modules can't be on the same day as other modules
+    for student, exs in student_exams.items():
+        core_mods = [exam for exam in exs if exam in Core_modules]
+        other_mods = [exam for exam in exs if exam not in Core_modules]
         for exam in core_mods:
             for other in other_mods:
                 model.Add(exam_day[exam] != exam_day[other])
 
-    # Constraint 4: Module leaders can have at most one exam in week 3
-    for leader in leader_courses:
-        week_3_exams = []
-        for exam in leader_courses[leader]:
-            is_in_week3 = model.NewBoolVar(f'{exam}_in_week3')
-            model.AddLinearConstraint(exam_day[exam], 13, 20).OnlyEnforceIf(is_in_week3)
-            week_3_exams.append(is_in_week3)
-        model.Add(sum(week_3_exams) <= 1)
+    # Constraint 2: Fixed module dates
+    for exam, (day_fixed, slot_fixed) in Fixed_modules.items():
+        if exam in exams:
+            model.Add(exam_day[exam] == day_fixed)
+            model.Add(exam_slot[exam] == slot_fixed)
 
-    # Constraint 5: Students with 50% extra time can't have more than one exam per day
+    # Constraint 3: Forbidden exam day-slot assignments
+    for exam in exams:
+        for day, slot in no_exam_dates:
+            model.AddForbiddenAssignments([exam_day[exam], exam_slot[exam]], [(day, slot)])
+
+    # Constraint 4: Max 3 exams in any 2-day window per student
+    for student, exs in student_exams.items():
+        for d in range(num_days - 1):
+            exams_in_2_days = []
+            for exam in exs:
+                is_on_d = model.NewBoolVar(f'{student}_{exam}_on_day_{d}')
+                is_on_d1 = model.NewBoolVar(f'{student}_{exam}_on_day_{d+1}')
+                is_on_either = model.NewBoolVar(f'{student}_{exam}_on_day_{d}_or_{d+1}')
+
+                model.Add(exam_day[exam] == d).OnlyEnforceIf(is_on_d)
+                model.Add(exam_day[exam] != d).OnlyEnforceIf(is_on_d.Not())
+                model.Add(exam_day[exam] == d + 1).OnlyEnforceIf(is_on_d1)
+                model.Add(exam_day[exam] != d + 1).OnlyEnforceIf(is_on_d1.Not())
+                model.AddBoolOr([is_on_d, is_on_d1]).OnlyEnforceIf(is_on_either)
+                model.AddBoolAnd([is_on_d.Not(), is_on_d1.Not()]).OnlyEnforceIf(is_on_either.Not())
+
+                exams_in_2_days.append(is_on_either)
+
+            model.Add(sum(exams_in_2_days) <= max_exams_2days)
+
+    # Constraint 5: Max 4 exams in any 5-day window per student
+    for student, exs in student_exams.items():
+        for start_day in range(num_days - 4):
+            exams_in_window = []
+            for exam in exs:
+                in_window = model.NewBoolVar(f'{student}_{exam}_in_day_{start_day}_to_{start_day + 4}')
+                model.AddLinearConstraint(exam_day[exam], start_day, start_day + 4).OnlyEnforceIf(in_window)
+                before_window = model.NewBoolVar(f'{student}_{exam}_before_{start_day}')
+                after_window = model.NewBoolVar(f'{student}_{exam}_after_{start_day + 4}')
+                model.Add(exam_day[exam] < start_day).OnlyEnforceIf(before_window)
+                model.Add(exam_day[exam] >= start_day).OnlyEnforceIf(before_window.Not())
+                model.Add(exam_day[exam] > start_day + 4).OnlyEnforceIf(after_window)
+                model.Add(exam_day[exam] <= start_day + 4).OnlyEnforceIf(after_window.Not())
+                model.AddBoolOr([before_window, after_window]).OnlyEnforceIf(in_window.Not())
+                exams_in_window.append(in_window)
+            model.Add(sum(exams_in_window) <= max_exams_5days)
+
+    # Constraint 6: At most 1 exam in week 3 per module leader
+    for leader, leader_exams in leader_courses.items():
+        exams_in_week3 = []
+        for exam in leader_exams:
+            in_week3 = model.NewBoolVar(f'{exam}_in_week3')
+            model.AddLinearConstraint(exam_day[exam], 13, 20).OnlyEnforceIf(in_week3)
+            before_week3 = model.NewBoolVar(f'{exam}_before_week3')
+            after_week3 = model.NewBoolVar(f'{exam}_after_week3')
+            model.Add(exam_day[exam] < 13).OnlyEnforceIf(before_week3)
+            model.Add(exam_day[exam] >= 13).OnlyEnforceIf(before_week3.Not())
+            model.Add(exam_day[exam] > 20).OnlyEnforceIf(after_week3)
+            model.Add(exam_day[exam] <= 20).OnlyEnforceIf(after_week3.Not())
+            model.AddBoolOr([before_week3, after_week3]).OnlyEnforceIf(in_week3.Not())
+            exams_in_week3.append(in_week3)
+        model.Add(sum(exams_in_week3) <= 1)
+
+    # Constraint 7: Extra time 50% students: max 1 exam per day
     for student in extra_time_students_50:
         for day in range(num_days):
             exams_on_day = []
@@ -228,15 +338,25 @@ def create_timetable(exams, student_exams, leader_courses, no_exam_dates, extra_
                 exams_on_day.append(is_on_day)
             model.Add(sum(exams_on_day) <= 1)
 
-    # Constraint 6: No exams on forbidden dates
+    # Constraint 8: Room assignments
     for exam in exams:
-        for date, slot in no_exam_dates:
-            is_forbidden = model.NewBoolVar(f'{exam}_forbidden_{date}_{slot}')
-            model.Add(exam_day[exam] == date).OnlyEnforceIf(is_forbidden)
-            model.Add(exam_day[exam] != date).OnlyEnforceIf(is_forbidden.Not())
-            model.Add(exam_slot[exam] == slot).OnlyEnforceIf(is_forbidden)
-            model.Add(exam_slot[exam] != slot).OnlyEnforceIf(is_forbidden.Not())
-            model.Add(is_forbidden == 0)
+        # Each exam must be assigned to at least one room
+        model.Add(sum(exam_room[(exam, room)] for room in rooms) >= 1)
+        
+        # Room capacity constraints
+        for room, (features, capacity) in rooms.items():
+            # Get number of AEA and non-AEA students for this exam
+            aea_count, non_aea_count = exam_counts[exam]
+            
+            # If room has AEA feature, it can take AEA students
+            if "AEA" in features:
+                model.Add(aea_count * exam_room[(exam, room)] <= capacity)
+            else:
+                # If room doesn't have AEA feature, it can't be used for AEA students
+                model.Add(aea_count * exam_room[(exam, room)] == 0)
+            
+            # Total capacity constraint
+            model.Add((aea_count + non_aea_count) * exam_room[(exam, room)] <= capacity)
 
     # Soft constraints and penalties
     soft_penalties = []
@@ -248,12 +368,21 @@ def create_timetable(exams, student_exams, leader_courses, no_exam_dates, extra_
                 model.Add(exam_day[exam] == day).OnlyEnforceIf(is_on_day)
                 model.Add(exam_day[exam] != day).OnlyEnforceIf(is_on_day.Not())
                 exams_on_day.append(is_on_day)
-            penalty = model.NewIntVar(0, 1, f'{student}_penalty_day_{day}')
-            model.Add(penalty == 1).OnlyEnforceIf(len(exams_on_day) > 1)
-            model.Add(penalty == 0).OnlyEnforceIf(len(exams_on_day) <= 1)
-            soft_penalties.append(penalty)
 
-    # Penalties for exams being too close together
+            num_exams = model.NewIntVar(0, len(exams_on_day), f'{student}_num_exams_day_{day}')
+            model.Add(num_exams == sum(exams_on_day))
+
+            has_multiple_exams = model.NewBoolVar(f'{student}_more_than_one_exam_day_{day}')
+            model.Add(num_exams >= 2).OnlyEnforceIf(has_multiple_exams)
+            model.Add(num_exams < 2).OnlyEnforceIf(has_multiple_exams.Not())
+
+            penalty = model.NewIntVar(0, 1, f'{student}_penalty_day_{day}')
+            model.Add(penalty == 1).OnlyEnforceIf(has_multiple_exams)
+            model.Add(penalty == 0).OnlyEnforceIf(has_multiple_exams.Not())
+
+            soft_penalties.append(extra_time_penalty * penalty)
+
+    # Spread penalties for module leaders
     spread_penalties = []
     for leader in leader_courses:
         mods = leader_courses[leader]
@@ -288,10 +417,10 @@ def create_timetable(exams, student_exams, leader_courses, no_exam_dates, extra_
                 model.Add(close_penalty == 0).OnlyEnforceIf(
                     is_gap_3.Not(), is_gap_2.Not(), is_gap_1.Not(), is_gap_0.Not()
                 )
-                spread_penalties.append(close_penalty)
+                spread_penalties.append(spread_penalty * close_penalty)
 
     # Minimize total penalties
-    model.Minimize(sum(spread_penalties) * spread_penalty + sum(soft_penalties) * week3_penalty)
+    model.Minimize(sum(spread_penalties) + sum(soft_penalties))
 
     # Solve
     solver = cp_model.CpSolver()
@@ -299,25 +428,33 @@ def create_timetable(exams, student_exams, leader_courses, no_exam_dates, extra_
 
     if status == cp_model.FEASIBLE or status == cp_model.OPTIMAL:
         timetable = {}
+        room_assignments = {}
         for exam in exams:
             d = solver.Value(exam_day[exam])
             s = solver.Value(exam_slot[exam])
             timetable[exam] = (d, s)
-        return timetable
+            
+            # Get room assignments
+            assigned_rooms = [room for room in rooms if solver.Value(exam_room[(exam, room)])]
+            room_assignments[exam] = assigned_rooms
+            
+        return timetable, room_assignments
     else:
-        return None
+        return None, None
 
-def visualize_timetable(timetable, days):
+def visualize_timetable(timetable, room_assignments, days):
     if not timetable:
         return None
 
     # Create a DataFrame for visualization
     data = []
     for exam, (day, slot) in timetable.items():
+        rooms_str = ", ".join(room_assignments[exam])
         data.append({
             'Exam': exam,
             'Day': days[day],
-            'Slot': 'Morning' if slot == 0 else 'Afternoon'
+            'Slot': 'Morning' if slot == 0 else 'Afternoon',
+            'Rooms': rooms_str
         })
     
     df = pd.DataFrame(data)
@@ -338,30 +475,30 @@ def visualize_timetable(timetable, days):
         yaxis_title='Day'
     )
     
-    return fig
+    return fig, df
 
 if st.button("Generate Timetable"):
     with st.spinner("Processing files and generating timetable..."):
-        exams, student_exams, leader_courses, no_exam_dates, extra_time_students_25, extra_time_students_50 = process_files()
-        
-        if all([exams, student_exams, leader_courses, no_exam_dates]):
-            timetable = create_timetable(exams, student_exams, leader_courses, no_exam_dates, extra_time_students_25, extra_time_students_50)
+        result = process_files()
+        if all(result):
+            exams, student_exams, leader_courses, no_exam_dates, extra_time_students_25, extra_time_students_50, AEA, exam_counts, days = result
+            timetable, room_assignments = create_timetable(exams, student_exams, leader_courses, no_exam_dates, extra_time_students_25, extra_time_students_50, AEA, exam_counts, days)
             
             if timetable:
                 st.success("Timetable generated successfully!")
                 
                 # Display timetable
                 st.header("Generated Timetable")
-                fig = visualize_timetable(timetable, days)
+                fig, df = visualize_timetable(timetable, room_assignments, days)
                 if fig:
                     st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Display detailed timetable
+                    st.subheader("Detailed Timetable")
+                    st.dataframe(df)
                 
                 # Export option
                 if st.button("Export Timetable"):
-                    df = pd.DataFrame([
-                        {'Exam': exam, 'Day': days[day], 'Slot': 'Morning' if slot == 0 else 'Afternoon'}
-                        for exam, (day, slot) in timetable.items()
-                    ])
                     csv = df.to_csv(index=False)
                     st.download_button(
                         "Download CSV",
