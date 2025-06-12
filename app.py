@@ -111,36 +111,152 @@ def ordinal(n):
     else:
         return f"{n}{['th','st','nd','rd','th','th','th','th','th','th'][n % 10]}"
 
+def validate_student_list(df):
+    """Validate the student list Excel file format and content."""
+    errors = []
+    
+    # Check if file has enough rows (header + at least one student)
+    if len(df) < 3:
+        errors.append("Student list must have at least 3 rows (header + students)")
+        return errors
+    
+    # Check if required columns exist (CID and AEA status)
+    if df.iloc[0, 0] != "CID" or df.iloc[0, 3] != "AEA":
+        errors.append("Student list must have 'CID' in column A and 'AEA' in column D")
+        return errors
+    
+    # Check if exam columns exist (starting from column J)
+    exam_columns = df.iloc[0, 9:].dropna()
+    if len(exam_columns) == 0:
+        errors.append("No exam columns found starting from column J")
+        return errors
+    
+    # Check for valid exam indicators (x, a, b)
+    student_rows = df.iloc[2:, :]
+    for idx, row in student_rows.iterrows():
+        cid = row[0]
+        if pd.isna(cid):
+            errors.append(f"Missing CID in row {idx + 3}")
+            continue
+            
+        # Check exam indicators
+        for col_idx, exam_name in enumerate(exam_columns, start=9):
+            value = str(row[col_idx]).strip().lower()
+            if value not in ['x', 'a', 'b', 'nan']:
+                errors.append(f"Invalid exam indicator '{value}' for student {cid} in exam {exam_name}")
+    
+    return errors
+
+def validate_module_list(df):
+    """Validate the module list Excel file format and content."""
+    errors = []
+    
+    # Check if file has enough rows
+    if len(df) < 2:
+        errors.append("Module list must have at least 2 rows")
+        return errors
+    
+    # Check required columns
+    required_cols = ['Banner Code (New CR)', 'Module Name', 'Module Leader (lecturer 1)']
+    for col in required_cols:
+        if col not in df.columns:
+            errors.append(f"Missing required column: {col}")
+    
+    # Check for missing values in required columns
+    for col in required_cols:
+        missing = df[col].isna().sum()
+        if missing > 0:
+            errors.append(f"Found {missing} missing values in column {col}")
+    
+    return errors
+
+def validate_useful_dates(wb):
+    """Validate the useful dates Excel file format and content."""
+    errors = []
+    
+    if not wb:
+        errors.append("Could not open useful dates file")
+        return errors
+    
+    ws = wb.active
+    
+    # Check if file has bank holidays section
+    found_bank_holidays = False
+    for row in range(1, 10):
+        cell_value = ws[f"F{row}"].value
+        if cell_value and "Bank Holiday" in str(cell_value):
+            found_bank_holidays = True
+            break
+    
+    if not found_bank_holidays:
+        errors.append("Could not find bank holidays section in useful dates file")
+    
+    # Check if file has summer term dates
+    found_summer_term = False
+    for row in range(1, ws.max_row):
+        cell_value = ws[f"F{row}"].value
+        if cell_value and "Summer Term" in str(cell_value):
+            found_summer_term = True
+            break
+    
+    if not found_summer_term:
+        errors.append("Could not find summer term dates in useful dates file")
+    
+    return errors
+
 def process_files():
+    """Process uploaded files and validate their contents."""
     if not all([student_file, module_file, dates_file]):
         st.error("Please upload all required files")
-        return None, None, None, None, None, None, None, None, None
-
+        return None, None, None, None, None, None, None, None
+    
+    # Validate student list
     try:
-        # Read student data
         students_df = pd.read_excel(student_file, header=None)
-        
-        # Read module data
+        student_errors = validate_student_list(students_df)
+        if student_errors:
+            st.error("Student list validation errors:")
+            for error in student_errors:
+                st.error(f"- {error}")
+            return None, None, None, None, None, None, None, None
+    except Exception as e:
+        st.error(f"Error reading student list: {str(e)}")
+        return None, None, None, None, None, None, None, None
+    
+    # Validate module list
+    try:
         leaders_df = pd.read_excel(module_file, sheet_name=1, header=1)
-        
-        # Read dates
+        module_errors = validate_module_list(leaders_df)
+        if module_errors:
+            st.error("Module list validation errors:")
+            for error in module_errors:
+                st.error(f"- {error}")
+            return None, None, None, None, None, None, None, None
+    except Exception as e:
+        st.error(f"Error reading module list: {str(e)}")
+        return None, None, None, None, None, None, None, None
+    
+    # Validate useful dates
+    try:
         wb = load_workbook(dates_file)
-        ws = wb.active
-
-        # Extract exams from student data
+        date_errors = validate_useful_dates(wb)
+        if date_errors:
+            st.error("Useful dates validation errors:")
+            for error in date_errors:
+                st.error(f"- {error}")
+            return None, None, None, None, None, None, None, None
+    except Exception as e:
+        st.error(f"Error reading useful dates: {str(e)}")
+        return None, None, None, None, None, None, None, None
+    
+    # If all validations pass, process the files
+    try:
+        # Extract exam names
         exams = students_df.iloc[0, 9:].dropna().tolist()
-
-        # Create student-exam dictionary
-        student_exams = {}
-        student_rows = students_df.iloc[2:, :]
         
-        # Get AEA students
-        valid_aea_mask = (
-            student_rows.iloc[:, 3].notna() &
-            (student_rows.iloc[:, 3].astype(str).str.strip() != "#N/A")
-        )
-        AEA = student_rows.loc[valid_aea_mask, student_rows.columns[0]].tolist()
-
+        # Create student exams dictionary
+        student_rows = students_df.iloc[2:, :]
+        student_exams = {}
         for _, row in student_rows.iterrows():
             cid = row[0]
             exams_taken = []
@@ -148,31 +264,40 @@ def process_files():
                 if str(row[col_idx]).strip().lower() in ['x', 'a', 'b']:
                     exams_taken.append(exam_name)
             student_exams[cid] = exams_taken
-
-        # Process module leaders
-        standardized_names = exams
+        
+        # Extract AEA students
+        valid_aea_mask = (
+            student_rows.iloc[:, 3].notna() &
+            (student_rows.iloc[:, 3].astype(str).str.strip() != "#N/A")
+        )
+        AEA = student_rows.loc[valid_aea_mask, student_rows.columns[0]].tolist()
+        
+        # Extract module leaders
         leader_courses = defaultdict(list)
+        standardized_names = exams
         for _, row in leaders_df.iterrows():
             leader = row['Module Leader (lecturer 1)']
             name = row['Module Name']
             code = row['Banner Code (New CR)']
-
+            
             if pd.isna(code) or pd.isna(name) or pd.isna(leader) or leader == "n/a":
                 continue
-
+                
             combined_name = f"{code} {name}"
             best_match, score, _ = process.extractOne(
                 combined_name, standardized_names, scorer=fuzz.token_sort_ratio
             )
-
-            if score >= 70 and best_match not in leader_courses[leader]:
-                leader_courses[leader].append(best_match)
-
-        # Process extra time students
+            
+            if score >= 70:
+                if best_match not in leader_courses[leader]:
+                    leader_courses[leader].append(best_match)
+        
+        # Extract extra time students
         extra_time_students_25 = students_df[students_df.iloc[:, 3].astype(str).str.startswith(("15min/hour", "25% extra time"))].iloc[:, 0].tolist()
         extra_time_students_50 = students_df[students_df.iloc[:, 3].astype(str).str.startswith(("30min/hour", "50% extra time"))].iloc[:, 0].tolist()
-
-        # Process bank holidays
+        
+        # Process useful dates
+        ws = wb.active
         bank_holidays = []
         row = 5
         while True:
@@ -183,59 +308,54 @@ def process_files():
             if isinstance(date_cell, datetime):
                 bank_holidays.append((str(name).strip(), date_cell.date()))
             row += 1
-
-        # Find Summer Term start date
+        
         summer_start = None
         while row < ws.max_row:
             cell_value = ws[f"F{row}"].value
             if cell_value and "Summer Term" in str(cell_value):
                 term_range = ws[f"F{row + 1}"].value
                 if term_range:
-                    start_part = term_range.split("to")[0].strip()
-                    start_str = re.sub(r"^\w+\s+", "", start_part)
-                    year_match = re.search(r"\b\d{4}\b", term_range)
-                    if year_match:
-                        start_str += f" {year_match.group(0)}"
-                    summer_start = parse(start_str, dayfirst=True).date()
+                    try:
+                        start_part = term_range.split("to")[0].strip()
+                        start_str = re.sub(r"^\w+\s+", "", start_part)
+                        year_match = re.search(r"\b\d{4}\b", term_range)
+                        if year_match:
+                            start_str += f" {year_match.group(0)}"
+                        else:
+                            raise ValueError("Year not found in date range.")
+                        summer_start = parse(start_str, dayfirst=True).date()
+                    except Exception as e:
+                        st.error(f"Could not parse Summer Term start: {term_range}")
+                        return None, None, None, None, None, None, None, None
                 break
             row += 1
-
+        
         if not summer_start:
-            raise ValueError("Summer Term start date not found")
-
+            st.error("Summer Term start date not found")
+            return None, None, None, None, None, None, None, None
+        
         first_monday = summer_start
         while first_monday.weekday() != 0:
             first_monday += timedelta(days=1)
-
-        # Create days list with proper formatting
-        days = []
-        for i in range(21):
-            date = first_monday + timedelta(days=i)
-            day_str = date.strftime("%A ") + ordinal(date.day) + date.strftime(" %B")
-            days.append(day_str)
-
+        
         no_exam_dates = [[5,0],[5,1],[6,0],[6,1],[12,0],[12,1],[13,0],[13,1],[18,0],[19,0],[19,1],[20,0],[20,1]]
         for name, bh_date in bank_holidays:
             delta = (bh_date - first_monday).days
             if 0 <= delta <= 20:
                 no_exam_dates.append([delta, 0])
                 no_exam_dates.append([delta, 1])
-
-        # Calculate exam counts for AEA and non-AEA students
-        exam_counts = defaultdict(lambda: [0, 0])
-        for cid, exams_taken in student_exams.items():
-            if cid in AEA:
-                for exam in exams_taken:
-                    exam_counts[exam][0] += 1
-            else:
-                for exam in exams_taken:
-                    exam_counts[exam][1] += 1
-
-        return exams, student_exams, dict(leader_courses), no_exam_dates, extra_time_students_25, extra_time_students_50, AEA, exam_counts, days
-
+        
+        days = []
+        for i in range(21):
+            date = first_monday + timedelta(days=i)
+            day_str = date.strftime("%A ") + ordinal(date.day) + date.strftime(" %B")
+            days.append(day_str)
+        
+        return exams, student_exams, AEA, leader_courses, extra_time_students_25, extra_time_students_50, no_exam_dates, days
+        
     except Exception as e:
         st.error(f"Error processing files: {str(e)}")
-        return None, None, None, None, None, None, None, None, None
+        return None, None, None, None, None, None, None, None
 
 def create_timetable(exams, student_exams, leader_courses, no_exam_dates, extra_time_students_25, extra_time_students_50, AEA, exam_counts, days):
     model = cp_model.CpModel()
@@ -477,17 +597,204 @@ def visualize_timetable(timetable, room_assignments, days):
     
     return fig, df
 
+def check_exam_constraints(student_exams, exams_timetabled, Fixed_modules, Core_modules, module_leaders, extra_time_students_50, AEA):
+    """Check if the generated timetable satisfies all exam constraints."""
+    violations = []
+    schedule = get_full_schedule(exams_timetabled, Fixed_modules)
+
+    # 1. No more than 3 exams in any 2 consecutive days (per student)
+    for student, exams in student_exams.items():
+        day_count = defaultdict(int)
+        for exam in exams:
+            if exam in schedule:
+                day = schedule[exam][0]
+                day_count[day] += 1
+
+        days = sorted(day_count.keys())
+        for day in days:
+            next_day = day + 1
+            if next_day in day_count:
+                total = day_count[day] + day_count[next_day]
+                if total > 3:
+                    violations.append(
+                        f"❌ Student {student} has more than 3 exams across days {day} and {next_day}"
+                    )
+
+    # 2. No more than 4 exams in any 5 consecutive weekdays
+    for student, exams in student_exams.items():
+        day_count = defaultdict(int)
+        for exam in exams:
+            if exam in schedule:
+                day = schedule[exam][0]
+                day_count[day] += 1
+
+        all_days = sorted(day_count.keys())
+        if all_days:
+            min_day, max_day = all_days[0], all_days[-1]
+            for start_day in range(min_day, max_day - 4 + 1):
+                total = sum(day_count.get(day, 0) for day in range(start_day, start_day + 5))
+                if total > 4:
+                    violations.append(
+                        f"❌ Student {student} has more than 4 exams from day {start_day} to {start_day + 4}"
+                    )
+
+    # 3. Core modules can't be on same day as other modules
+    for student, exams in student_exams.items():
+        core_mods = [exam for exam in exams if exam in Core_modules]
+        other_mods = [exam for exam in exams if exam not in Core_modules]
+
+        for core_exam in core_mods:
+            if core_exam in exams_timetabled:
+                core_day = exams_timetabled[core_exam][0]
+                for other_exam in other_mods:
+                    if other_exam in exams_timetabled:
+                        other_day = exams_timetabled[other_exam][0]
+                        if core_day == other_day:
+                            violations.append(
+                                f"❌ Student {student} has core exam '{core_exam}' and non-core exam '{other_exam}' on the same day ({core_day})"
+                            )
+
+    # 4. Module leaders can't have more than one exam in week 3
+    week3_days = set(range(15, 21))
+    for leader, mods in module_leaders.items():
+        exams_in_week3 = [exam for exam in mods if exam in schedule and schedule[exam][0] in week3_days]
+        if len(exams_in_week3) > 1:
+            violations.append(f"❌ Module leader {leader} has more than one exam in week 3: {exams_in_week3}")
+
+    # 5. Students with >50% extra time can't have more than one exam per day
+    for student in extra_time_students_50:
+        if student not in student_exams:
+            continue
+        day_count = defaultdict(int)
+        for exam in student_exams[student]:
+            if exam in schedule:
+                day = schedule[exam][0]
+                day_count[day] += 1
+        for day, count in day_count.items():
+            if count > 1:
+                violations.append(f"❌ Student {student} with >50% extra time has {count} exams on day {day}")
+
+    # 6. Students with 25% extra time (soft constraint)
+    for student in AEA:
+        if student not in extra_time_students_50:
+            day_count = defaultdict(int)
+            for exam in student_exams[student]:
+                if exam in schedule:
+                    day = schedule[exam][0]
+                    day_count[day] += 1
+            for day, count in day_count.items():
+                if count > 1:
+                    violations.append(f"⚠️soft warning Student {student} with <=25% extra time has {count} exams on day {day}")
+
+    return violations
+
+def check_room_constraints(exams_timetabled, exam_counts, room_dict):
+    """Check if the room assignments satisfy all constraints."""
+    violations = []
+
+    # 1. No room double-booked at same day & slot
+    room_schedule = defaultdict(list)  # key=(day, slot, room), value=list of exams
+    for exam, (day, slot, rooms_) in exams_timetabled.items():
+        for room in rooms_:
+            room_schedule[(day, slot, room)].append(exam)
+
+    for (day, slot, room), exams_in_room in room_schedule.items():
+        if len(exams_in_room) > 1:
+            violations.append(
+                f"❌ Room '{room}' double-booked on day {day}, slot {slot} for exams: {exams_in_room}"
+            )
+
+    # 2. Check every exam assigned at least one room
+    for exam, (day, slot, rooms) in exams_timetabled.items():
+        if not rooms:
+            violations.append(f"❌ Exam '{exam}' has no assigned room!")
+
+    # 3. Check room capacity sufficiency per exam
+    for exam, (day, slot, rooms) in exams_timetabled.items():
+        if exam not in exam_counts:
+            violations.append(f"⚠️ No student count for exam '{exam}', skipping capacity check")
+            continue
+
+        AEA_students, SEQ_students = exam_counts[exam]
+        AEA_capacity = sum(room_dict[r][1] for r in rooms if "AEA" in room_dict[r][0])
+        SEQ_capacity = sum(room_dict[r][1] for r in rooms if "SEQ" in room_dict[r][0])
+        
+        if AEA_capacity < AEA_students:
+            violations.append(
+                f"❌ Exam '{exam}' has insufficient AEA capacity: needed {AEA_students}, assigned {AEA_capacity}"
+            )
+        if SEQ_capacity < SEQ_students:
+            violations.append(
+                f"❌ Exam '{exam}' has insufficient SEQ capacity: needed {SEQ_students}, assigned {SEQ_capacity}"
+            )
+
+    return violations
+
+def get_full_schedule(exams_timetabled, Fixed_modules):
+    """Combine fixed modules with dynamically assigned ones."""
+    full_schedule = Fixed_modules.copy()
+    full_schedule.update(exams_timetabled)
+    return full_schedule
+
+def validate_timetable(timetable, room_assignments, student_exams, leader_courses, extra_time_students_50, AEA, exam_counts):
+    """Validate the generated timetable against all constraints."""
+    if not timetable or not room_assignments:
+        return ["❌ No timetable generated"]
+        
+    violations = []
+    
+    # Check exam constraints
+    exam_violations = check_exam_constraints(
+        student_exams=student_exams,
+        exams_timetabled=timetable,
+        Fixed_modules=Fixed_modules,
+        Core_modules=Core_modules,
+        module_leaders=leader_courses,
+        extra_time_students_50=extra_time_students_50,
+        AEA=AEA
+    )
+    violations.extend(exam_violations)
+    
+    # Check room constraints
+    room_violations = check_room_constraints(
+        exams_timetabled={exam: (day, slot, room_assignments[exam]) for exam, (day, slot) in timetable.items()},
+        exam_counts=exam_counts,
+        room_dict=rooms
+    )
+    violations.extend(room_violations)
+    
+    return violations
+
 if st.button("Generate Timetable"):
     with st.spinner("Processing files and generating timetable..."):
         result = process_files()
         if all(result):
-            exams, student_exams, leader_courses, no_exam_dates, extra_time_students_25, extra_time_students_50, AEA, exam_counts, days = result
+            exams, student_exams, AEA, leader_courses, extra_time_students_25, extra_time_students_50, no_exam_dates, days = result
+            
+            # Calculate exam counts for AEA and non-AEA students
+            exam_counts = defaultdict(lambda: [0, 0])
+            for cid, exams_taken in student_exams.items():
+                if cid in AEA:
+                    for exam in exams_taken:
+                        exam_counts[exam][0] += 1
+                else:
+                    for exam in exams_taken:
+                        exam_counts[exam][1] += 1
+            
             timetable, room_assignments = create_timetable(exams, student_exams, leader_courses, no_exam_dates, extra_time_students_25, extra_time_students_50, AEA, exam_counts, days)
             
-            if timetable:
-                st.success("Timetable generated successfully!")
+            if timetable and room_assignments:
+                # Validate the timetable
+                violations = validate_timetable(timetable, room_assignments, student_exams, leader_courses, extra_time_students_50, AEA, exam_counts)
                 
-                # Display timetable
+                if violations:
+                    st.warning("⚠️ Timetable generated with some issues:")
+                    for violation in violations:
+                        st.write(violation)
+                else:
+                    st.success("✅ Timetable generated successfully with no constraint violations!")
+                
+                # Display the timetable
                 st.header("Generated Timetable")
                 fig, df = visualize_timetable(timetable, room_assignments, days)
                 if fig:
@@ -508,4 +815,6 @@ if st.button("Generate Timetable"):
                         key='download-csv'
                     )
             else:
-                st.error("Could not generate a valid timetable. Please check the constraints.") 
+                st.error("❌ Failed to generate a valid timetable. Please check your input data and constraints.")
+        else:
+            st.error("❌ Failed to process input files. Please check the file formats and try again.") 
