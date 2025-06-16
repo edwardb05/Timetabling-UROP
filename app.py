@@ -796,6 +796,21 @@ def generate_excel(exams_timetabled, days,exam_counts):
             for col in [1, 2]:
                 cell = ws.cell(row=row, column=col)
                 cell.alignment = Alignment(vertical='center')
+        for col in ws.columns:
+            max_length = 0
+            col_letter = col[0].column_letter  # Get the column letter (like 'A')
+
+            for cell in col:
+                try:
+                    # Convert cell value to string and get length
+                    cell_length = len(str(cell.value))
+                    if cell_length > max_length:
+                        max_length = cell_length
+                except:
+                    pass
+
+            # Set the column width (add a little extra for padding)
+            ws.column_dimensions[col_letter].width = max_length + 2
         # ------------ SAVE workbook ------------
         wb.save(filename)
         
@@ -1034,18 +1049,17 @@ if __name__ == "__main__":
                         error_msg = str(e)
                     finally:
                         processing_done = True
-                generate()
-                # # Start background thread
-                # thread = threading.Thread(target=generate)
-                # thread.start()
+                # Start background thread
+                thread = threading.Thread(target=generate)
+                thread.start()
 
-                # # Looping animation while waiting
-                # while not processing_done:
-                #     with animation_placeholder:
-                #         components.html(animation_html(), height=350)
-                #     time.sleep(2.1)
+                # Looping animation while waiting
+                while not processing_done:
+                    with animation_placeholder:
+                        components.html(animation_html(), height=350)
+                    time.sleep(2.1)
 
-                # animation_placeholder.empty()
+                animation_placeholder.empty()
 
                 if error_msg:
                     st.error(f"An error occurred: {error_msg}")
