@@ -55,7 +55,7 @@ with col1:
 
 with col2:
     week3_penalty = st.slider("Week 3 Penalty Weight", min_value=0, max_value=10, value=5)
-    spread_penalty = st.slider("Exam Spacing Penalty Weight", min_value=0, max_value=10, value=5)
+    Unused_penalty = st.slider("Unused seats Penalty Weight", min_value=0, max_value=10, value=5)
     extra_time_penalty = st.slider("Extra Time Student Penalty Weight", min_value=0, max_value=10, value=5)
 
 # Core modules list
@@ -455,7 +455,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
 
                 exams_in_2_days.append(is_on_either)
 
-            model.Add(sum(exams_in_2_days) <= 3)
+            model.Add(sum(exams_in_2_days) <= max_exams_2days)
 
     # 5. Max 4 exams in any 5-day sliding window per student
     for student, exs in student_exams.items():
@@ -479,7 +479,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
 
                 exams_in_window.append(in_window)
 
-            model.Add(sum(exams_in_window) <= 4)
+            model.Add(sum(exams_in_window) <= max_exams_5days)
 
     # 6. At most 1 exam in week 3 (days 13 to 20) per module leader
     for leader, leader_exams in leader_courses.items():
@@ -516,7 +516,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             model.Add(sum(exams_on_day) <= 1)
 
     # Soft constraint that extra time students with<= 25% should only have one a day
-    soft_penalties = []
+    extra_time_gr8er_1_day = []
 
     for student in extra_time_students_25:
         for day in range(num_days):
@@ -541,7 +541,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             model.Add(penalty == 1).OnlyEnforceIf(has_multiple_exams)
             model.Add(penalty == 0).OnlyEnforceIf(has_multiple_exams.Not())
 
-            soft_penalties.append(100*penalty)
+            extra_time_gr8er_1_day.append(penalty)
 
     # Soft constraint that course leaders modules should be spread out
     spread_penalties = []
@@ -662,7 +662,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
     for exam in exams:
             model.Add(sum(exam_room[(exam, room)] for room in rooms) >= 1)
 
-    model.Minimize(sum(spread_penalties + soft_penalties+unuseds))
+    model.Minimize(sum(spread_penalties*spread_penalty + extra_time_gr8er_1_day*week3_penalty+unuseds*unused_penalty))
     class ExamScheduleCollector(cp_model.CpSolverSolutionCallback):
             def __init__(self, exam_day, exam_slot, exam_room, exams, rooms, leader_courses, days, slots, max_solutions=10):
                 cp_model.CpSolverSolutionCallback.__init__(self)
