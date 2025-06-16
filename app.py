@@ -1053,7 +1053,7 @@ if __name__ == "__main__":
                     # Success output
                     st.success("✅ Timetable generated successfully!")
 
-                    with open("exam_schedule_merged0.xlsx", "rb") as file:
+                    with open("exam_schedule_merged.xlsx", "rb") as file:
                         st.download_button(
                             label="Download Timetable",
                             data=file,
