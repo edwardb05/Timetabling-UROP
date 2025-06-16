@@ -1062,7 +1062,7 @@ if __name__ == "__main__":
                         )
 
                     st.header("Generated Timetable")
-                    df = pd.read_excel("exam_schedule_merged0.xlsx")
+                    df = pd.read_excel("exam_schedule_merged.xlsx")
                     st.dataframe(df)
 
             except Exception as e:
