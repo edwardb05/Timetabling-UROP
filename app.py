@@ -61,40 +61,37 @@ with col2:
     extra_time_penalty = st.slider("Extra Time Student Penalty Weight", min_value=0, max_value=10, value=5)
 
 # Core modules list
-Core_modules = [
-    "MECH70001 Nuclear Thermal Hydraulics",
-    "MECH60004/MECH70042 Introduction to Nuclear Energy A/B",
-    "MECH70002 Nuclear Reactor Physics",
-    "MECH70008 Mechanical Transmissions Technology",
-    "MECH70006 Metal Processing Technology",
-    "MECH70021Aircraft Engine Technology",
-    "MECH70003 Future Clean Transport Technology",
-    "MECH60015/70030 PEN3/AME"
-]
+Core_modules = ["MECH70001 Nuclear Thermal Hydraulics",
+                "MECH60004/MECH70042 Introduction to Nuclear Energy A/B",
+                "MECH70002 Nuclear Reactor Physics",
+                "MECH70008 Mechanical Transmissions Technology",
+                "MECH70006 Metal Processing Technology",
+                "MECH70021Aircraft Engine Technology",
+                "MECH70003 Future Clean Transport Technology",
+                "MECH60015/70030 PEN3/AME"]
+
 
 # Fixed modules dictionary
-Fixed_modules = {
-    "BUSI60039 Business Strategy": [1, 1],
-    "BUSI60046 Project Management": [2, 1],
-    "ME-ELEC70098 Optimisation": [3, 0],
-    "MECH70001 Nuclear Thermal Hydraulics": [3, 0],
-    "BUSI60040/BUSI60043 Corporate Finance Online/Finance & Financial Management": [3, 1],
-    "MECH60004/MECH70042 Introduction to Nuclear Energy A/B": [4, 0],
-    "ME-ELEC70022 Modelling and Control of Multi-body Mechanical Systems": [4, 0],
-    "MATE97022 Nuclear Materials 1": [4, 0],
-    "ME-MATE70029 Nuclear Fusion": [9, 0],
-    "MECH70002 Nuclear Reactor Physics": [10, 0],
-    "ME-ELEC70076 Sustainable Electrical Systems": [10, 0],
-    "ME ELEC70066 Applied Advanced Optimisation": [10, 0],
-    "MECH70020 Combustion, Safety and Fire Dynamics": [11, 0],
-    "BIOE70016 Human Neuromechanical Control and Learning": [11, 0],
-    "CENG60013 Nuclear Chemical Engineering": [11, 0],
-    "MECH70008 Mechanical Transmissions Technology": [17, 1],
-    "MECH70006 Metal Processing Technology": [17, 1],
-    "MECH70021Aircraft Engine Technology": [17, 1],
-    "MECH70003 Future Clean Transport Technology": [17, 1],
-    "MECH60015/70030 PEN3/AME": [18, 1]
-}
+Fixed_modules = {"BUSI60039 Business Strategy" :[1,1],
+                 "BUSI60046 Project Management":[2,1],
+                 "ME-ELEC70098 Optimisation":[3,0],
+                 "MECH70001 Nuclear Thermal Hydraulics":[3,0],
+                 "BUSI60040/BUSI60043 Corporate Finance Online/Finance & Financial Management":[3,1],
+                 "MECH60004/MECH70042 Introduction to Nuclear Energy A/B":[4,0],
+                 "ME-ELEC70022 Modelling and Control of Multi-body Mechanical Systems":[4,0],
+                 "MATE97022 Nuclear Materials 1":[4,0],
+                 "ME-MATE70029 Nuclear Fusion":[9,0],
+                 "MECH70002 Nuclear Reactor Physics":[10,0],
+                 "ME-ELEC70076 Sustainable Electrical Systems":[10,0],
+                 "ME ELEC70066 Applied Advanced Optimisation":[10,0],
+                 "MECH70020 Combustion, Safety and Fire Dynamics":[11,0],
+                 "BIOE70016 Human Neuromechanical Control and Learning":[11,0],
+                 "CENG60013 Nuclear Chemical Engineering":[11,0],
+                 "MECH70008 Mechanical Transmissions Technology":[17,1],
+                 "MECH70006 Metal Processing Technology":[17,1],
+                 "MECH70021Aircraft Engine Technology":[17,1],
+                 "MECH70003 Future Clean Transport Technology":[17,1],
+                 "MECH60015/70030 PEN3/AME":[18,1]}
 
 # Room dictionary with capacities and features
 rooms = {
@@ -258,8 +255,7 @@ def process_files():
         return None, None, None
 
 def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5days):
-    # Read files
-    
+
     # Extract exam names from row 0, starting from column J (index 9)
     exams = students_df.iloc[0, 9:].dropna().tolist()
     # Get the range of rows containing student data (from row 3 onward)
@@ -267,7 +263,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
     #Total student count for AEA and non AEA
 
     # Process bank holidays and create no_exam_dates
-    dates_start = time.time()
+
     ws = wb.active
     bank_holidays = []
     row = 5
@@ -309,10 +305,15 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
 
     # Find first Monday
     first_monday = summer_start
+
     while first_monday.weekday() != 0:
         first_monday += timedelta(days=1)
+    for name, bh_date in bank_holidays:
+        delta = (bh_date - first_monday).days
+        if 0 <= delta <= 20:
+            no_exam_dates.append([delta, 0])
+            no_exam_dates.append([delta, 1])
 
-  
     student_exams = {}
 
     for _, row in student_rows.iterrows():
@@ -330,12 +331,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
 
 
 
-    def ordinal(n):
-        # Returns ordinal string for an integer n, e.g. 1 -> 1st, 2 -> 2nd
-        if 11 <= (n % 100) <= 13:
-            return f"{n}th"
-        else:
-            return f"{n}{['th','st','nd','rd','th','th','th','th','th','th'][n % 10]}"
+
 
     days = []
     for i in range(21):
@@ -395,26 +391,15 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             for exam in exams_taken:
                 exam_counts[exam][1] += 1
     # Process AEA students
-# Convert to normal dict if desired
+    # Convert to normal dict if desired
     # Process extra time students
     extra_time_students_25 = students_df[students_df.iloc[:, 3].astype(str).str.startswith(("15min/hour", "25% extra time"))].iloc[:, 0].tolist()
-
-
-
     # Make a list of students with 50% extra time to ensure they dont have more than on exam a day
     extra_time_students_50 = students_df[students_df.iloc[:, 3].astype(str).str.startswith(("30min/hour", "50% extra time"))].iloc[:, 0].tolist()
 
 
 
-    # Create no_exam_dates list
-    no_exam_dates = []
-    for i in range(21):
-        date = first_monday + timedelta(days=i)
-        if date.weekday() >= 5:  # Weekend
-            no_exam_dates.append((i, 0))
-            no_exam_dates.append((i, 1))
-        if i == 20 and date.weekday() == 4:  # Last Friday
-            no_exam_dates.append((i, 0))
+
 
     # Initialize model
     model = cp_model.CpModel()
@@ -449,10 +434,9 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
         model.Add(exam_slot[exam] == slot_fixed)
 
     # 3. Forbidden exam day-slot assignments
-    for exam in set().union(*student_exams.values()):
+    for exam in exams:
         for day, slot in no_exam_dates:
             model.AddForbiddenAssignments([exam_day[exam], exam_slot[exam]], [(day, slot)])
-
     # 4. Max 3 exams in any 2-day window per student
     for student, ex in student_exams.items():
         for d in range(num_days - 1):
@@ -535,6 +519,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
 
     # Soft constraint that extra time students with<= 25% should only have one a day
     soft_penalties = []
+
     for student in extra_time_students_25:
         for day in range(num_days):
             exams_on_day = []
@@ -612,7 +597,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
 
     # Room constraints
     unuseds = []
-    for exam in set().union(*student_exams.values()):
+    for exam in exams:
        		# Calculate capacity's for each room
         AEA_capacity = sum(
             rooms[room][1] * exam_room[(exam, room)]
@@ -676,7 +661,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                 model.AddAtMostOne(exams_in_room_time)
 
         # Each exam must have at least one room
-    for exam in set().union(*student_exams.values()):
+    for exam in exams:
             model.Add(sum(exam_room[(exam, room)] for room in rooms) >= 1)
 
     model.Minimize(sum(spread_penalties + soft_penalties+unuseds))
