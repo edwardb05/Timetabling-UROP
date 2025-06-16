@@ -736,7 +736,7 @@ def generate_excel(exams_timetabled, days,exam_counts):
 
         # ------------ SAVE to Excel ------------
         df = pd.DataFrame(rows, columns=['Date', 'Time', 'Exam', 'Total No of Students', 'Room'])
-        filename = f'exam_schedule_merged{i}.xlsx'
+        filename = f'exam_schedule_merged.xlsx'
         df.to_excel(filename, index=False)
 
         # ------------ LOAD workbook and worksheet ------------
