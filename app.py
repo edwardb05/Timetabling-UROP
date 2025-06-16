@@ -691,6 +691,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
     if status == cp_model.FEASIBLE or status == cp_model.OPTIMAL:
         exams_timetabled = {}
         for exam in exams:
+            st.write(f"Exam: {exam}")
             d = solver.Value(exam_day[exam])
             s = solver.Value(exam_slot[exam])
             assigned_rooms = [room for room in rooms if solver.Value(exam_room[(exam, room)]) == 1]
@@ -699,7 +700,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             except IndexError:
                 leader = "unknown"
             exams_timetabled[exam] = (d, s, assigned_rooms)
-            return exams_timetabled, days, exam_counts, 
+        return exams_timetabled, days, exam_counts, 
     elif status == cp_model.INFEASIBLE:
         # print infeasible boolean variables index
         st.error('Infeasible model. Exam schedule could not be created.')
@@ -1033,18 +1034,18 @@ if __name__ == "__main__":
                         error_msg = str(e)
                     finally:
                         processing_done = True
+                generate()
+                # # Start background thread
+                # thread = threading.Thread(target=generate)
+                # thread.start()
 
-                # Start background thread
-                thread = threading.Thread(target=generate)
-                thread.start()
+                # # Looping animation while waiting
+                # while not processing_done:
+                #     with animation_placeholder:
+                #         components.html(animation_html(), height=350)
+                #     time.sleep(2.1)
 
-                # Looping animation while waiting
-                while not processing_done:
-                    with animation_placeholder:
-                        components.html(animation_html(), height=350)
-                    time.sleep(2.1)
-
-                animation_placeholder.empty()
+                # animation_placeholder.empty()
 
                 if error_msg:
                     st.error(f"An error occurred: {error_msg}")
