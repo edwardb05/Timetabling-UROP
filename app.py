@@ -8,8 +8,6 @@ from openpyxl import load_workbook
 from datetime import datetime, timedelta
 import re
 from dateutil.parser import parse
-import plotly.express as px
-import plotly.graph_objects as go
 import time
 import logging
 from openpyxl.styles import PatternFill, Alignment
