@@ -682,32 +682,71 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             model.Add(sum(exam_room[(exam, room)] for room in rooms) >= 1)
 
     model.Minimize(sum(spread_penalties*spread_penalty + extra_time_gr8er_1_day*extra_time_penalty+unuseds*unused_penalty))
-    
+    class ExamScheduleCollector(cp_model.CpSolverSolutionCallback):
+            def __init__(self, exam_day, exam_slot, exam_room, exams, rooms, leader_courses, days, slots, max_solutions=10):
+                cp_model.CpSolverSolutionCallback.__init__(self)
+                self.exam_day = exam_day
+                self.exam_slot = exam_slot
+                self.exam_room = exam_room
+                self.exams = exams
+                self.rooms = rooms
+                self.leader_courses = leader_courses
+                self.days = days
+                self.slots = slots
+                self.spread_penalties = spread_penalties or []
+                self.soft_penalties = extra_time_gr8er_1_day or []
+                self.unuseds = unuseds or []
+                self.solutions = []
+                self.max_solutions = max_solutions
 
-    # Solve the model
+            def on_solution_callback(self):
+                schedule = {}
+                for exam in self.exams:
+                    d = self.Value(self.exam_day[exam])
+                    s = self.Value(self.exam_slot[exam])
+                    assigned_rooms = [room for room in self.rooms if self.Value(self.exam_room[(exam, room)]) == 1]
+                    try:
+                        leader = [name for name, exams in self.leader_courses.items() if exam in exams][0]
+                    except IndexError:
+                        leader = "unknown"
+                    schedule[exam] = (d, s, assigned_rooms)
+
+            # Calculate total penalty
+                total_penalty = sum(self.Value(v) for v in self.spread_penalties + self.soft_penalties + self.unuseds)
+
+            # Store as (schedule, penalty)
+                self.solutions.append((schedule, total_penalty))
+
+                if len(self.solutions) >= self.max_solutions:
+                    self.StopSearch()
+
+        # Usage:
+
     solver = cp_model.CpSolver()
-    status = solver.Solve(model)
+    solver.parameters.enumerate_all_solutions = True
 
-    if status == cp_model.FEASIBLE or status == cp_model.OPTIMAL:
-        exams_timetabled = {}
-        for exam in exams:
-            d = solver.Value(exam_day[exam])
-            s = solver.Value(exam_slot[exam])
-            assigned_rooms = [room for room in rooms if solver.Value(exam_room[(exam, room)]) == 1]
-            try:
-                leader = [name for name, exams in leader_courses.items() if exam in exams][0]
-            except IndexError:
-                leader = "unknown"
-            exams_timetabled[exam] = (d, s, assigned_rooms)
-            return exams_timetabled, days, exam_counts, 
-    elif status == cp_model.INFEASIBLE:
-        # print infeasible boolean variables index
-        st.error('Infeasible model. Exam schedule could not be created.')
+    collector = ExamScheduleCollector(
+            exam_day, exam_slot, exam_room,
+            exams, rooms, leader_courses, days, slots,
+            max_solutions=100
+        )
+
+    status = solver.Solve(model, collector)
+
+    if status == cp_model.INFEASIBLE:
+            st.error('Infeasible model.')
+    elif len(collector.solutions) == 0:
+            st.error('No solutions found.')
     else:
-        st.error("No solution found.")
+            st.write(f"Found {len(collector.solutions)} solutions.")
 
-def generate_excel(exams_timetabled, days,exam_counts):
+            # Sort by penalty (ascending)
+            sorted_solutions = sorted(collector.solutions, key=lambda tup: tup[1])  # tup = (schedule, penalty)
+            return sorted_solutions, days,exam_counts
+
+def generate_excel(sorted_solutions, days,exam_counts):
     
+    for i, (exams_timetabled,Penalties),  in enumerate(sorted_solutions):
         # ------------ BUILD data dictionary ------------
         # data[day][slot] = list of (exam_name, rooms)
         data = {}
@@ -800,7 +839,7 @@ def generate_excel(exams_timetabled, days,exam_counts):
         
 
 
-        st.write(f"Excel file '{filename}' created with merged cells, colors, and full schedule.")
+    st.write(f"Excel file '{filename}' created with merged cells, colors, and full schedule.")
 
 
 def animation_html():
