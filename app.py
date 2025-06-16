@@ -54,8 +54,8 @@ with col1:
     max_exams_5days = st.number_input("Maximum Exams in 5-Day Window", min_value=1, max_value=10, value=4)
 
 with col2:
-    week3_penalty = st.slider("Week 3 Penalty Weight", min_value=0, max_value=10, value=5)
-    Unused_penalty = st.slider("Unused seats Penalty Weight", min_value=0, max_value=10, value=5)
+    spread_penalty = st.slider("Module leaders spread out Penalty Weight", min_value=0, max_value=10, value=5)
+    unused_penalty = st.slider("Unused seats Penalty Weight", min_value=0, max_value=10, value=5)
     extra_time_penalty = st.slider("Extra Time Student Penalty Weight", min_value=0, max_value=10, value=5)
 
 # Core modules list
@@ -218,6 +218,7 @@ def validate_useful_dates(wb):
     
     return errors
 
+
 def process_files():
     """Process uploaded files and return processed data."""
     if not all([student_file, module_file, dates_file]):
@@ -245,12 +246,34 @@ def process_files():
         if dates_errors:
             st.error("Useful dates errors:\n" + "\n".join(dates_errors))
             return None, None, None
-        
+        exams = student_df.iloc[0, 9:].dropna().tolist()
+    # Get the range of rows containing student data (from row 3 onward)
+        student_rows = student_df.iloc[2:, :] 
+        student_exams = {}
+        for _, row in student_rows.iterrows():
+            cid = row[0]  # Column A = student CID
+            exams_taken = []
+
+            for col_idx, exam_name in enumerate(exams, start=9):  # Column J = index 9
+                if str(row[col_idx]).strip().lower() == 'x' or str(row[col_idx]).strip().lower() == 'a'  or str(row[col_idx]).strip().lower() == 'b' :  # Check for 'x' or 'a' or 'b' to indicate they take this course (case-insensitive)
+                    exams_taken.append(exam_name)
+
+            student_exams[cid] = exams_taken
+        for student in student_exams:
+            for exam in student_exams[student]:
+                if exam in Core_modules:
+                    for other_exam in Fixed_modules:
+                        if other_exam in student_exams[student]:
+                            if exam != other_exam and Fixed_modules[exam][0] == Fixed_modules[other_exam][0]:
+                                st.error(f"Core module {exam} conflicts with fixed module {other_exam} on the same day for student {student} so model will be infeasible")
+
+                        
         return student_df, module_df, dates_wb
         
     except Exception as e:
         st.error(f"Error processing files: {str(e)}")
         return None, None, None
+
 
 def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5days):
 
@@ -326,10 +349,6 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
 
         # Get the range of rows containing student data (from row 3 onward)
     student_rows = students_df.iloc[2:, :]  # row index 3 and onward
-
-
-
-
 
     days = []
     for i in range(21):
@@ -662,7 +681,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
     for exam in exams:
             model.Add(sum(exam_room[(exam, room)] for room in rooms) >= 1)
 
-    model.Minimize(sum(spread_penalties*spread_penalty + extra_time_gr8er_1_day*week3_penalty+unuseds*unused_penalty))
+    model.Minimize(sum(spread_penalties*spread_penalty + extra_time_gr8er_1_day*extra_time_penalty+unuseds*unused_penalty))
     class ExamScheduleCollector(cp_model.CpSolverSolutionCallback):
             def __init__(self, exam_day, exam_slot, exam_room, exams, rooms, leader_courses, days, slots, max_solutions=10):
                 cp_model.CpSolverSolutionCallback.__init__(self)
@@ -675,7 +694,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                 self.days = days
                 self.slots = slots
                 self.spread_penalties = spread_penalties or []
-                self.soft_penalties = soft_penalties or []
+                self.soft_penalties = extra_time_gr8er_1_day or []
                 self.unuseds = unuseds or []
                 self.solutions = []
                 self.max_solutions = max_solutions
@@ -715,11 +734,11 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
     status = solver.Solve(model, collector)
 
     if status == cp_model.INFEASIBLE:
-            print('Infeasible model.')
+            st.error('Infeasible model.')
     elif len(collector.solutions) == 0:
-            print('No solutions found.')
+            st.error('No solutions found.')
     else:
-            print(f"Found {len(collector.solutions)} solutions.")
+            st.write(f"Found {len(collector.solutions)} solutions.")
 
             # Sort by penalty (ascending)
             sorted_solutions = sorted(collector.solutions, key=lambda tup: tup[1])  # tup = (schedule, penalty)
@@ -1027,6 +1046,8 @@ def animation_html():
 if __name__ == "__main__":
     # Add a generate button
     if st.button("Generate Timetable"):
+        # Process the files
+        students_df, leaders_df, wb = process_files()
         if not all([student_file, module_file, dates_file]):
             st.error("Please upload all required files first.")
         else:
@@ -1037,10 +1058,9 @@ if __name__ == "__main__":
                 error_msg = None
 
                 def generate():
-                    global processing_done, error_msg
+                    global processing_done, error_msg, students_df, leaders_df
                     try:
-                        # Process the files
-                        students_df, leaders_df, wb = process_files()
+           
 
                         # Generate the timetable
                         timetable, days, exam_counts = create_timetable(
