@@ -117,6 +117,10 @@ no_exam_dates = [
     [18,0], [19,0], [19,1], [20,0], [20,1]  # Last Friday and weekend
 ]
 
+no_exam_dates_soft = [
+    [15,0],# Week 3 tuesday morning
+    [16,0], #Week 3 Wednesday morning
+]
 def ordinal(n):
     # Returns ordinal string for an integer n, e.g. 1 -> 1st, 2 -> 2nd
     if 11 <= (n % 100) <= 13:
@@ -551,7 +555,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             model.Add(sum(exams_on_day) <= 1)
 
     # Soft constraint that extra time students with<= 25% should only have one a day
-    extra_time_gr8er_1_day = []
+    extra_time_25_penalties = []
 
     for student in extra_time_students_25:
         for day in range(num_days):
@@ -576,7 +580,29 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             model.Add(penalty == 1).OnlyEnforceIf(has_multiple_exams)
             model.Add(penalty == 0).OnlyEnforceIf(has_multiple_exams.Not())
 
-            extra_time_gr8er_1_day.append(penalty)
+            extra_time_25_penalties.append(penalty)
+
+    #Soft constraint to ensure no exams on some days
+    #1 Initiated list of penalties
+    soft_day_penalties = []
+
+    for exam in exams:#2 Loop exams
+        for day, slot in no_exam_dates_soft:
+            is_on_soft_day = model.NewBoolVar(f'{exam}_on_soft_day_{day}_{slot}')
+            
+            #3 Create boolean conditions
+            model.Add(exam_day[exam] == day).OnlyEnforceIf(is_on_soft_day)
+            model.Add(exam_slot[exam] == slot).OnlyEnforceIf(is_on_soft_day)
+            model.Add(exam_day[exam] != day).OnlyEnforceIf(is_on_soft_day.Not())
+            model.Add(exam_slot[exam] != slot).OnlyEnforceIf(is_on_soft_day.Not())
+            
+            
+                    #4 Add penalty if on day
+            penalty = model.NewIntVar(0, 10, f'{exam}_penalty_soft_day_{day}_{slot}')
+            model.Add(penalty == 10).OnlyEnforceIf(is_on_soft_day)
+            model.Add(penalty == 0).OnlyEnforceIf(is_on_soft_day.Not())
+
+        soft_day_penalties.append(penalty)
 
     # Soft constraint that course leaders modules should be spread out
     spread_penalties = []
@@ -627,6 +653,35 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                 )
 
                 spread_penalties.append(close_penalty)
+
+    #Soft constraint to ensure no exams on some days
+    #1 Initiated list of penalties
+    soft_day_penalties = []
+
+    for exam in exams:#2 Loop exams
+        for day, slot in no_exam_dates_soft:
+            is_on_soft_day = model.NewBoolVar(f'{exam}_on_soft_day_{day}_{slot}')
+
+            #3 Boolean variables for day and slot matches
+            day_match = model.NewBoolVar(f'{exam}_day_eq_{day}')
+            slot_match = model.NewBoolVar(f'{exam}_slot_eq_{slot}')
+            
+            model.Add(exam_day[exam] == day).OnlyEnforceIf(day_match)
+            model.Add(exam_day[exam] != day).OnlyEnforceIf(day_match.Not())
+
+            model.Add(exam_slot[exam] == slot).OnlyEnforceIf(slot_match)
+            model.Add(exam_slot[exam] != slot).OnlyEnforceIf(slot_match.Not())
+
+            #4 is_on_soft_day = day_match AND slot_match
+            model.AddBoolAnd([day_match, slot_match]).OnlyEnforceIf(is_on_soft_day)
+            model.AddBoolOr([day_match.Not(), slot_match.Not()]).OnlyEnforceIf(is_on_soft_day.Not())
+
+            #5 Penalty: 10 if scheduled on soft day
+            penalty = model.NewIntVar(0, 10, f'{exam}_penalty_soft_day_{day}_{slot}')
+            model.Add(penalty == 10).OnlyEnforceIf(is_on_soft_day)
+            model.Add(penalty == 0).OnlyEnforceIf(is_on_soft_day.Not())
+
+            soft_day_penalties.append(penalty)
 
     # Room constraints
     unuseds = []
@@ -697,7 +752,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
     for exam in exams:
             model.Add(sum(exam_room[(exam, room)] for room in rooms) >= 1)
 
-    model.Minimize(sum(spread_penalties*spread_penalty + extra_time_gr8er_1_day*extra_time_penalty+unuseds*unused_penalty))
+    model.Minimize(sum(spread_penalties*spread_penalty +    extra_time_25_penalties*extra_time_penalty+unuseds*unused_penalty))
     
 
     #### ----- Solve the model ----- ####
