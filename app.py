@@ -684,7 +684,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             soft_day_penalties.append(penalty)
 
     # Room constraints
-    unuseds = []
+  
     for exam in exams:
        		# Calculate capacity's for each room
         AEA_capacity = sum(
