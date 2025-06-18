@@ -807,14 +807,14 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             except IndexError:
                 leader = "unknown"
             exams_timetabled[exam] = (d, s, assigned_rooms)
-        return exams_timetabled, days, exam_counts, 
+        return exams_timetabled, days, exam_counts, exam_types 
     elif status == cp_model.INFEASIBLE:
         # print infeasible boolean variables index
         st.error('Infeasible model. Exam schedule could not be created.')
     else:
         st.error("No solution found.")
 
-def generate_excel(exams_timetabled, days,exam_counts):
+def generate_excel(exams_timetabled, days,exam_counts,exam_types):
     
         # ------------ BUILD data dictionary ------------
         # data[day][slot] = list of (exam_name, rooms)
@@ -832,16 +832,23 @@ def generate_excel(exams_timetabled, days,exam_counts):
             for s_idx, slot_name in enumerate(['Morning', 'Afternoon']):
                 exams_list = data.get(day_name, {}).get(s_idx, [])
                 if not exams_list:
-                    # No exams this slot — add empty row with '' students and empty room
+                            # No exams this slot — add empty row with '' students and empty room
                     rows.append([day_name, slot_name, '', '', ''])
                     row_meta.append((d_idx, s_idx))
                 else:
                     for exam_name, room in exams_list:
                         room_str = ', '.join(room)
-                        total_students = sum(exam_counts.get(exam_name, [0, 0]))  # safe get
-                        rows.append([day_name, slot_name, exam_name, total_students, room_str])
+                                    #   total_students = sum(exam_counts.get(exam_name, [0, 0]))  
+                        total_students = f'AEA {exam_counts[exam_name][0]}, Non-AEA {exam_counts[exam_name][1]}'
+                        if exam_types[exam_name] == "PC":
+                            type_str = " (Computer)"
+                        elif exam_types[exam_name] == "Standard":
+                            type_str = " (Standard)"
+                        rows.append([day_name, slot_name, exam_name, total_students, room_str,type_str])
                         row_meta.append((d_idx, s_idx))
-
+            rows.append([day_name, slot_name, '', '', ''])
+            row_meta.append((d_idx, s_idx))
+                
         # ------------ SAVE to Excel ------------
         df = pd.DataFrame(rows, columns=['Date', 'Time', 'Exam', 'Total No of Students', 'Room'])
         filename = f'exam_schedule_merged.xlsx'
@@ -1147,11 +1154,11 @@ if __name__ == "__main__":
            
 
                         # Generate the timetable
-                        timetable, days, exam_counts = create_timetable(
+                        timetable, days, exam_counts, exam_types = create_timetable(
                             students_df, leaders_df, wb, max_exams_2days, max_exams_5days,
                         )
                         # Create the Excel file
-                        generate_excel(timetable, days, exam_counts)
+                        generate_excel(timetable, days, exam_counts, exam_types)
                     except Exception as e:
                         error_msg = str(e)
                     finally:
