@@ -93,20 +93,20 @@ Fixed_modules = {"BUSI60039 Business Strategy" :[1,1],
 
 # Room dictionary with capacities and features
 rooms = {
-    'CAGB 203': [["Computer", "SEQ","AEA"], 65],
+    'CAGB 203': [["Computer", "SEQ",], 65],
     'CAGB 309': [["SEQ"], 54],
     'CAGB 659-652': [["SEQ"], 75],
     'CAGB 747-748': [["SEQ"], 36],
     'CAGB 749-752': [["SEQ"], 75],
-    'CAGB 761': [["Computer"], 25],
-    'CAGB 762': [["Computer"], 25],
-    'SKEM 208': [["Computer"], 35],
-    'SKEM 317': [["Computer"], 20],
+    'CAGB 761': [["Computer", "SEQ"], 25],
+    'CAGB 762': [["Computer", "SEQ"], 25],
+    'SKEM 208': [["Computer", "SEQ"], 35],
+    'SKEM 317': [["Computer", "SEQ"], 20],
     'CAGB 320-321': [["AEA"], 10],
     'CAGB 305': [["AEA"], 4],
     'CAGB 349': [["AEA"], 2],
     'CAGB 311': [["AEA"], 1],
-    'CAGB 765': [["AEA"], 10],
+    'CAGB 765': [["AEA"],["Computer"], 10],
     'CAGB 527': [["AEA"], 2]
 }
 
@@ -281,10 +281,9 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
     exams = students_df.iloc[0, 9:].dropna().tolist()
     # Get the range of rows containing student data (from row 3 onward)
     student_rows = students_df.iloc[2:, :]  # row index 3 and onward
-    #Total student count for AEA and non AEA
+
 
     # Process bank holidays and create no_exam_dates
-
     ws = wb.active
     bank_holidays = []
     row = 5
@@ -367,37 +366,52 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
     standardized_names = exams
 
     leader_courses = defaultdict(list)
-
+    exam_types = dict()
     # Loop through rows in the module list
     for _, row in leaders_df.iterrows():
-        leader = row['Module Leader (lecturer 1)']
+
+        leaders = []
+        if pd.notna(row['Module Leader (lecturer 1)']):
+            leaders.append(row['Module Leader (lecturer 1)'])
+
+        if pd.notna(row['(UGO Internal) 2nd Exam Marker']):
+            leaders.append(row['(UGO Internal) 2nd Exam Marker'])
+
         name = row['Module Name']
         code = row['Banner Code (New CR)']   # module leader
 
         # Skip if any required field is missing
-        if pd.isna(code) or pd.isna(name) or pd.isna(leader):
+        if pd.isna(code) or pd.isna(name) :
             continue
 
-        if leader == "n/a":
+        if len(leaders) == 0 :
             continue
 
         # Combine code and name
         combined_name = f"{code} {name}"
 
-        
-
         # Fuzzy match to standardized names
         best_match, score, _ = process.extractOne(
             combined_name, standardized_names, scorer=fuzz.token_sort_ratio
         )
-        if score >= 70:
-            if best_match not in leader_courses[leader]:
-                leader_courses[leader].append(best_match)
-            else:
-                st.write(f"⚠️ Duplicate match skipped for '{combined_name}': '{best_match}' is already listed for {leader}.")
-        else:
-            st.write(f"⚠️ Low confidence match for '{combined_name}' (best: '{best_match}', score: {score}).")
 
+        if score >= 70: 
+            exam_types[best_match] = row['(UGO Internal) Exam Style'] if pd.notna(row['(UGO Internal) Exam Style']) else None
+            for leader in leaders:
+
+                if best_match not in leader_courses[leader]:
+                    leader_courses[leader].append(best_match)
+
+    # Convert to normal dict if desired
+    leader_courses = dict(leader_courses)
+
+    for exam in exams:
+        if exam not in exam_types:
+            exam_types[exam] = "Standard"
+
+
+
+    # Count exams for AEA and non-AEA students
     exam_counts = defaultdict(lambda: [0, 0])
 
     for cid, exams_taken in student_exams.items():
@@ -407,8 +421,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
         else:
             for exam in exams_taken:
                 exam_counts[exam][1] += 1
-    # Process AEA students
-    # Convert to normal dict if desired
+
     # Process extra time students
     extra_time_students_25 = students_df[students_df.iloc[:, 3].astype(str).str.startswith(("15min/hour", "25% extra time"))].iloc[:, 0].tolist()
     # Make a list of students with 50% extra time to ensure they dont have more than on exam a day
@@ -416,7 +429,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
 
 
 
-
+    #### ---- Model initialization ---- ####
 
     # Initialize model
     model = cp_model.CpModel()
@@ -436,6 +449,9 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
     for exam in set().union(*student_exams.values()):
         for room in rooms:
             exam_room[(exam, room)] = model.NewBoolVar(f'{exam}_in_{room.replace(" ", "_")}')
+
+    #### ---- Constraints ---- ####
+            
 
     # 1. Core modules can not have multiple exams on that day
     for student, exs in student_exams.items():
@@ -684,7 +700,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
     model.Minimize(sum(spread_penalties*spread_penalty + extra_time_gr8er_1_day*extra_time_penalty+unuseds*unused_penalty))
     
 
-    # Solve the model
+    #### ----- Solve the model ----- ####
     solver = cp_model.CpSolver()
     status = solver.Solve(model)
 
