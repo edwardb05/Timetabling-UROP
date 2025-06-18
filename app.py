@@ -106,7 +106,7 @@ rooms = {
     'CAGB 305': [["AEA"], 4],
     'CAGB 349': [["AEA"], 2],
     'CAGB 311': [["AEA"], 1],
-    'CAGB 765': [["AEA"],["Computer"], 10],
+    'CAGB 765': [["AEA","Computer"], 10],
     'CAGB 527': [["AEA"], 2]
 }
 
@@ -683,27 +683,27 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
 
             soft_day_penalties.append(penalty)
 
-    # Room constraints
-  
-    for exam in exams:
-       		# Calculate capacity's for each room
-        AEA_capacity = sum(
-            rooms[room][1] * exam_room[(exam, room)]
-            for room in rooms if "AEA" in rooms[room][0]
-        )
+        # Room constraints
+    for exam in exams: # Loop through
+                # Calculate capacity's for each room
+        if exam != "MECH70006 Metal Processing Technology":
+            AEA_capacity = sum(
+                rooms[room][1] * exam_room[(exam, room)]
+                for room in rooms if "AEA" in rooms[room][0]
+            )
 
-        SEQ_capacity = sum(
-            rooms[room][1] * exam_room[(exam, room)]
-            for room in rooms if "SEQ" in rooms[room][0]
-        )
+            SEQ_capacity = sum(
+                rooms[room][1] * exam_room[(exam, room)]
+                for room in rooms if "SEQ" in rooms[room][0]
+            )
 
 
-        AEA_students = exam_counts[exam][0]
-        SEQ_students = exam_counts[exam][1]
+            AEA_students = exam_counts[exam][0]
+            SEQ_students = exam_counts[exam][1]
 
-        # Add Constraint
-        model.Add(AEA_capacity >= AEA_students)
-        model.Add(SEQ_capacity >= SEQ_students)
+            # Add Constraint
+            model.Add(AEA_capacity >= AEA_students)
+            model.Add(SEQ_capacity >= SEQ_students)
 
 
 
@@ -740,6 +740,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
 
     room_surplus = [] #1 Initialize list of surplus
     for exam in exams:#2 Loop through exams
+
             #3 Add constraint the each exam has more than 1 room
         model.Add(sum(exam_room[(exam, room)] for room in rooms) >= 1)
         
