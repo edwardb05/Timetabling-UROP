@@ -55,7 +55,7 @@ with col1:
 
 with col2:
     spread_penalty = st.slider("Module leaders spread out Penalty Weight", min_value=0, max_value=10, value=5)
-    unused_penalty = st.slider("Unused seats Penalty Weight", min_value=0, max_value=10, value=5)
+    room_penalty = st.slider("More than 2 rooms Penalty Weight", min_value=0, max_value=10, value=5)
     extra_time_penalty = st.slider("Extra Time Student Penalty Weight", min_value=0, max_value=10, value=5)
 
 # Core modules list
@@ -705,19 +705,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
         model.Add(AEA_capacity >= AEA_students)
         model.Add(SEQ_capacity >= SEQ_students)
 
-        # Calculate unused seats
-        unused_AEA = model.NewIntVar(0, 10000, f'{exam}_unused_AEA')
-        unused_SEQ = model.NewIntVar(0, 10000, f'{exam}_unused_SEQ')
 
-        model.Add(unused_AEA == AEA_capacity - AEA_students)
-        model.Add(unused_SEQ == SEQ_capacity - SEQ_students)
-
-            # Calculate total unused seats
-        total_unused = model.NewIntVar(0, 20000, f'{exam}_total_unused')
-        model.Add(total_unused == unused_AEA + unused_SEQ)
-
-            # add to list unused
-        unuseds.append(total_unused)
 
     # Room time conflicts
     for d in range(num_days):
@@ -748,11 +736,59 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                 # Add AtMostOne constraint: only one exam can be assigned to this room at this time
                 model.AddAtMostOne(exams_in_room_time)
 
-        # Each exam must have at least one room
-    for exam in exams:
-            model.Add(sum(exam_room[(exam, room)] for room in rooms) >= 1)
+        # Each exam must have at least one room and minimum room count
 
-    model.Minimize(sum(spread_penalties*spread_penalty +    extra_time_25_penalties*extra_time_penalty+unuseds*unused_penalty))
+    room_surplus = [] #1 Initialize list of surplus
+    for exam in exams:#2 Loop through exams
+            #3 Add constraint the each exam has more than 1 room
+        model.Add(sum(exam_room[(exam, room)] for room in rooms) >= 1)
+        
+        #4Create integer for amount of rooms
+        rooms_len = model.NewIntVar(0, 9, f'rooms for {exam}')
+        
+        model.Add(rooms_len == sum(exam_room[(exam, room)]for room in rooms))
+
+
+        #5 Create penalty variable
+        rooms_penalty = model.NewIntVar(0, 15, f'{exam}_room_surplus_penalty')
+
+        #6 Create Boolean conditions
+        is_room_length_greater_6 = model.NewBoolVar(f'{exam}_has_six_or_more_rooms')
+        is_room_length_5 = model.NewBoolVar(f'{exam}_has_five_rooms')
+        is_room_length_4 = model.NewBoolVar(f'{exam}_has_four_rooms')
+        is_room_length_3 = model.NewBoolVar(f'{exam}_has_three_rooms')
+        
+            #7 Set the true condition
+            
+        model.Add(rooms_len >= 6).OnlyEnforceIf(is_room_length_greater_6)
+        model.Add(rooms_len <= 5).OnlyEnforceIf(is_room_length_greater_6.Not())
+            
+        model.Add(rooms_len == 5).OnlyEnforceIf(is_room_length_5)
+        model.Add(rooms_len != 5).OnlyEnforceIf(is_room_length_5.Not())
+
+        model.Add(rooms_len == 4).OnlyEnforceIf(is_room_length_4)
+        model.Add(rooms_len != 4).OnlyEnforceIf(is_room_length_4.Not())
+            
+        model.Add(rooms_len == 3).OnlyEnforceIf(is_room_length_3)
+        model.Add(rooms_len != 3).OnlyEnforceIf(is_room_length_3.Not())
+
+
+
+        #8 Assign penalty values based gap
+        model.add(rooms_penalty == 15).OnlyEnforceIf(is_room_length_greater_6)
+        model.Add(rooms_penalty == 9).OnlyEnforceIf(is_room_length_5)
+        model.Add(rooms_penalty == 6).OnlyEnforceIf(is_room_length_4)
+        model.Add(rooms_penalty == 4).OnlyEnforceIf(is_room_length_3)
+
+
+        #9 no penalty if less than 3 rooms 
+        model.Add(rooms_penalty == 0).OnlyEnforceIf(
+                    is_room_length_3.Not(), is_room_length_4.Not(), is_room_length_5.Not(), is_room_length_greater_6.Not(),
+                )
+                            #10 Add penalty to total penalties
+        room_surplus.append(rooms_penalty)
+
+    model.Minimize(sum(spread_penalties*spread_penalty + soft_day_penalties+   extra_time_25_penalties*extra_time_penalty+room_surplus*room_penalty))
     
 
     #### ----- Solve the model ----- ####
