@@ -569,53 +569,22 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                 )
         room_surplus.append(rooms_penalty)
     model.Minimize(sum(spread_penalties*spread_penalty + soft_day_penalties+   extra_time_25_penalties*extra_time_penalty+room_surplus*room_penalty))
-    sorted_solutions = []
-    class ExamScheduleCollector(cp_model.CpSolverSolutionCallback):
-        def __init__(self, exam_day, exam_slot, exam_room, exams, rooms, leader_courses, days, slots, max_solutions=10):
-            cp_model.CpSolverSolutionCallback.__init__(self)
-            self.exam_day = exam_day
-            self.exam_slot = exam_slot
-            self.exam_room = exam_room
-            self.exams = exams
-            self.rooms = rooms
-            self.leader_courses = leader_courses
-            self.days = days
-            self.slots = slots
-            self.spread_penalties = spread_penalties or []
-            self.soft_day_penalties = soft_day_penalties or []
-            self.room_surplus = room_surplus or []
-            self.solutions = []
-            self.max_solutions = max_solutions
-        def on_solution_callback(self):
-            schedule = {}
-            for exam in self.exams:
-                d = self.Value(self.exam_day[exam])
-                s = self.Value(self.exam_slot[exam])
-                assigned_rooms = [room for room in self.rooms if self.Value(self.exam_room[(exam, room)]) == 1]
-                try:
-                    leader = [name for name, exams in self.leader_courses.items() if exam in exams][0]
-                except IndexError:
-                    leader = "unknown"
-                schedule[exam] = (d, s, assigned_rooms)
-            total_penalty = sum(self.Value(v) for v in self.spread_penalties + self.soft_day_penalties + self.room_surplus )
-            st.write("solution found")
-            self.solutions.append((schedule, total_penalty))
-            if len(self.solutions) >= self.max_solutions:
-                self.StopSearch()
+    #### ----- Solve the model ----- ####
     solver = cp_model.CpSolver()
-    solver.parameters.enumerate_all_solutions = True
-    collector = ExamScheduleCollector(
-        exam_day, exam_slot, exam_room,
-        exams, rooms, leader_courses, days, slots,
-        max_solutions=100
-    )
-    status = solver.Solve(model, collector)
-    if status == cp_model.INFEASIBLE:
-        st.error('Infeasible model. Exam schedule could not be created.')
-    elif len(collector.solutions) == 0:
-        st.error("No solution found.")
-    else:
-        sorted_solutions = sorted(collector.solutions, key=lambda tup: tup[1])
+    status = solver.Solve(model)
+    st.write('model solved')
+    if status == cp_model.FEASIBLE or status == cp_model.OPTIMAL:
+        exams_timetabled = {}
+        for exam in exams:
+            st.write(f"Exam: {exam}")
+            d = solver.Value(exam_day[exam])
+            s = solver.Value(exam_slot[exam])
+            assigned_rooms = [room for room in rooms if solver.Value(exam_room[(exam, room)]) == 1]
+            try:
+                leader = [name for name, exams in leader_courses.items() if exam in exams][0]
+            except IndexError:
+                leader = "unknown"
+            exams_timetabled[exam] = (d, s, assigned_rooms)
         with open("timetable_state.pkl", "wb") as f:
             pickle.dump({
                 "days": days,
@@ -632,7 +601,14 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                 "rooms": rooms,
                 "exam_types": exam_types
             }, f)
-        return sorted_solutions[0][0], days, exam_counts, exam_types, sorted_solutions[0][1],
+        total_penalty = sum(solver.Value(v) for v in spread_penalties + soft_day_penalties + room_surplus +extra_time_25_penalties)
+        return exams_timetabled, days, exam_counts, exam_types,total_penalty
+    elif status == cp_model.INFEASIBLE:
+        # print infeasible boolean variables index
+        st.error('Infeasible model. Exam schedule could not be created.')
+    else:
+        st.error("No solution found.")
+
 
 def generate_excel(exams_timetabled, days, exam_counts, exam_types):
     # data[day][slot] = list of (exam_name, rooms)
