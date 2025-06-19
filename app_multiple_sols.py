@@ -55,7 +55,7 @@ with col1:
 
 with col2:
     spread_penalty = st.slider("Module leaders spread out Penalty Weight", min_value=0, max_value=10, value=5)
-    unused_penalty = st.slider("Unused seats Penalty Weight", min_value=0, max_value=10, value=5)
+    room_penalty = st.slider("More than 2 rooms Penalty Weight", min_value=0, max_value=10, value=5)
     extra_time_penalty = st.slider("Extra Time Student Penalty Weight", min_value=0, max_value=10, value=5)
 
 # Core modules list
@@ -93,21 +93,15 @@ Fixed_modules = {"BUSI60039 Business Strategy" :[1,1],
 
 # Room dictionary with capacities and features
 rooms = {
-    'CAGB 203': [["Computer", "SEQ","AEA"], 65],
+    'CAGB 203': [["Computer", "SEQ"], 65],
     'CAGB 309': [["SEQ"], 54],
-    'CAGB 659-652': [["SEQ"], 75],
+    'CAGB 649-652': [["SEQ"], 75],
     'CAGB 747-748': [["SEQ"], 36],
     'CAGB 749-752': [["SEQ"], 75],
-    'CAGB 761': [["Computer"], 25],
-    'CAGB 762': [["Computer"], 25],
-    'SKEM 208': [["Computer"], 35],
-    'SKEM 317': [["Computer"], 20],
-    'CAGB 320-321': [["AEA"], 10],
-    'CAGB 305': [["AEA"], 4],
-    'CAGB 349': [["AEA"], 2],
-    'CAGB 311': [["AEA"], 1],
-    'CAGB 765': [["AEA"], 10],
-    'CAGB 527': [["AEA"], 2]
+    'CAGB 761': [["Computer", "SEQ","AEA"], 25],
+    'CAGB 762': [["Computer", "SEQ","AEA"], 25],
+    'CAGB 765': [["AEA","Computer"], 10],
+    'CAGB 527': [["AEA"], 2],
 }
 
 # No exam dates (weekends and last Friday morning)
@@ -117,6 +111,10 @@ no_exam_dates = [
     [18,0], [19,0], [19,1], [20,0], [20,1]  # Last Friday and weekend
 ]
 
+no_exam_dates_soft = [
+    [15,0],# Week 3 tuesday morning
+    [16,0], #Week 3 Wednesday morning
+]
 def ordinal(n):
     # Returns ordinal string for an integer n, e.g. 1 -> 1st, 2 -> 2nd
     if 11 <= (n % 100) <= 13:
@@ -281,10 +279,9 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
     exams = students_df.iloc[0, 9:].dropna().tolist()
     # Get the range of rows containing student data (from row 3 onward)
     student_rows = students_df.iloc[2:, :]  # row index 3 and onward
-    #Total student count for AEA and non AEA
+
 
     # Process bank holidays and create no_exam_dates
-
     ws = wb.active
     bank_holidays = []
     row = 5
@@ -367,37 +364,52 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
     standardized_names = exams
 
     leader_courses = defaultdict(list)
-
+    exam_types = dict()
     # Loop through rows in the module list
     for _, row in leaders_df.iterrows():
-        leader = row['Module Leader (lecturer 1)']
+
+        leaders = []
+        if pd.notna(row['Module Leader (lecturer 1)']):
+            leaders.append(row['Module Leader (lecturer 1)'])
+
+        if pd.notna(row['(UGO Internal) 2nd Exam Marker']):
+            leaders.append(row['(UGO Internal) 2nd Exam Marker'])
+
         name = row['Module Name']
         code = row['Banner Code (New CR)']   # module leader
 
         # Skip if any required field is missing
-        if pd.isna(code) or pd.isna(name) or pd.isna(leader):
+        if pd.isna(code) or pd.isna(name) :
             continue
 
-        if leader == "n/a":
+        if len(leaders) == 0 :
             continue
 
         # Combine code and name
         combined_name = f"{code} {name}"
 
-        
-
         # Fuzzy match to standardized names
         best_match, score, _ = process.extractOne(
             combined_name, standardized_names, scorer=fuzz.token_sort_ratio
         )
-        if score >= 70:
-            if best_match not in leader_courses[leader]:
-                leader_courses[leader].append(best_match)
-            else:
-                st.write(f"⚠️ Duplicate match skipped for '{combined_name}': '{best_match}' is already listed for {leader}.")
-        else:
-            st.write(f"⚠️ Low confidence match for '{combined_name}' (best: '{best_match}', score: {score}).")
 
+        if score >= 70: 
+            exam_types[best_match] = row['(UGO Internal) Exam Style'] if pd.notna(row['(UGO Internal) Exam Style']) else None
+            for leader in leaders:
+
+                if best_match not in leader_courses[leader]:
+                    leader_courses[leader].append(best_match)
+
+    # Convert to normal dict if desired
+    leader_courses = dict(leader_courses)
+
+    for exam in exams:
+        if exam not in exam_types:
+            exam_types[exam] = "Standard"
+
+
+
+    # Count exams for AEA and non-AEA students
     exam_counts = defaultdict(lambda: [0, 0])
 
     for cid, exams_taken in student_exams.items():
@@ -407,8 +419,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
         else:
             for exam in exams_taken:
                 exam_counts[exam][1] += 1
-    # Process AEA students
-    # Convert to normal dict if desired
+
     # Process extra time students
     extra_time_students_25 = students_df[students_df.iloc[:, 3].astype(str).str.startswith(("15min/hour", "25% extra time"))].iloc[:, 0].tolist()
     # Make a list of students with 50% extra time to ensure they dont have more than on exam a day
@@ -416,7 +427,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
 
 
 
-
+    #### ---- Model initialization ---- ####
 
     # Initialize model
     model = cp_model.CpModel()
@@ -436,6 +447,9 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
     for exam in set().union(*student_exams.values()):
         for room in rooms:
             exam_room[(exam, room)] = model.NewBoolVar(f'{exam}_in_{room.replace(" ", "_")}')
+
+    #### ---- Constraints ---- ####
+            
 
     # 1. Core modules can not have multiple exams on that day
     for student, exs in student_exams.items():
@@ -534,12 +548,13 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                 exams_on_day.append(is_on_day)
             model.Add(sum(exams_on_day) <= 1)
 
-    # Soft constraint that extra time students with<= 25% should only have one a day
-    extra_time_gr8er_1_day = []
+    #Soft constraint that extra time students with<= 25% should only have one a day
+    extra_time_25_penalties= []
 
     for student in extra_time_students_25:
         for day in range(num_days):
             exams_on_day = []
+
             for exam in student_exams[student]:
                 is_on_day = model.NewBoolVar(f'{student}_{exam}_on_day_{day}')
                 model.Add(exam_day[exam] == day).OnlyEnforceIf(is_on_day)
@@ -555,38 +570,40 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             model.Add(num_exams >= 2).OnlyEnforceIf(has_multiple_exams)
             model.Add(num_exams < 2).OnlyEnforceIf(has_multiple_exams.Not())
 
-            # Link this to a penalty variable
+            # Link this to a penalty variable (can just use the bool directly or an IntVar)
             penalty = model.NewIntVar(0, 1, f'{student}_penalty_day_{day}')
             model.Add(penalty == 1).OnlyEnforceIf(has_multiple_exams)
             model.Add(penalty == 0).OnlyEnforceIf(has_multiple_exams.Not())
 
-            extra_time_gr8er_1_day.append(penalty)
+            extra_time_25_penalties.append(penalty)
 
-    # Soft constraint that course leaders modules should be spread out
-    spread_penalties = []
-    for leader in leader_courses:
+    #Soft constraint that course leaders modules should be spread out
+    spread_penalties =[]
+
+    for leader in leader_courses:#1 Loop through module leaders
         mods = leader_courses[leader]
-        for i in range(len(mods)):
+
+        for i in range(len(mods)):#2 loop through modules
             for j in range(i+1, len(mods)):
                 m1 = mods[i]
                 m2 = mods[j]
 
-                # Calculate absolute day difference
+                #3 Calculate absolute day difference
                 diff = model.NewIntVar(-21, 21, f'{m1}_{m2}_diff')
                 abs_diff = model.NewIntVar(0, 21, f'{m1}_{m2}_abs_diff')
+                            #4 Add difference to model
                 model.Add(diff == exam_day[m1] - exam_day[m2])
                 model.AddAbsEquality(abs_diff, diff)
 
-                # Create penalty variable
+                #5 Create penalty variable
                 close_penalty = model.NewIntVar(0, 5, f'{m1}_{m2}_penalty')
 
-                # Create Boolean conditions
+                #6 Create Boolean conditions
                 is_gap_3 = model.NewBoolVar(f'{m1}_{m2}_gap3')
                 is_gap_2 = model.NewBoolVar(f'{m1}_{m2}_gap2')
                 is_gap_1 = model.NewBoolVar(f'{m1}_{m2}_gap1')
                 is_gap_0 = model.NewBoolVar(f'{m1}_{m2}_gap0')
-
-                # Set the true condition
+                            #7 Set the true condition
                 model.Add(abs_diff == 3).OnlyEnforceIf(is_gap_3)
                 model.Add(abs_diff != 3).OnlyEnforceIf(is_gap_3.Not())
 
@@ -599,62 +616,81 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                 model.Add(abs_diff == 0).OnlyEnforceIf(is_gap_0)
                 model.Add(abs_diff != 0).OnlyEnforceIf(is_gap_0.Not())
 
-                # Assign penalty values based gap
+                #8 Assign penalty values based gap
                 model.Add(close_penalty == 1).OnlyEnforceIf(is_gap_3)
                 model.Add(close_penalty == 3).OnlyEnforceIf(is_gap_2)
                 model.Add(close_penalty == 4).OnlyEnforceIf(is_gap_1)
                 model.Add(close_penalty == 5).OnlyEnforceIf(is_gap_0)
 
-                # No penalty if gap ≥ 4 and not equal to 0–3
+                #9 no penalty if gap ≥ 4 and not equal to 0–3
                 model.Add(close_penalty == 0).OnlyEnforceIf(
                     is_gap_3.Not(), is_gap_2.Not(), is_gap_1.Not(), is_gap_0.Not()
                 )
-
+                            #10 Add penalty to total penalties
                 spread_penalties.append(close_penalty)
 
-    # Room constraints
-    unuseds = []
-    for exam in exams:
-       		# Calculate capacity's for each room
-        AEA_capacity = sum(
-            rooms[room][1] * exam_room[(exam, room)]
-            for room in rooms if "AEA" in rooms[room][0]
-        )
+    #Soft constraint to ensure no exams on some days
+    #1 Initiated list of penalties
+    soft_day_penalties = []
 
-        SEQ_capacity = sum(
-            rooms[room][1] * exam_room[(exam, room)]
-            for room in rooms if "SEQ" in rooms[room][0]
-        )
+    for exam in exams:#2 Loop exams
+        for day, slot in no_exam_dates_soft:
+            is_on_soft_day = model.NewBoolVar(f'{exam}_on_soft_day_{day}_{slot}')
+
+            #3 Boolean variables for day and slot matches
+            day_match = model.NewBoolVar(f'{exam}_day_eq_{day}')
+            slot_match = model.NewBoolVar(f'{exam}_slot_eq_{slot}')
+            
+            model.Add(exam_day[exam] == day).OnlyEnforceIf(day_match)
+            model.Add(exam_day[exam] != day).OnlyEnforceIf(day_match.Not())
+
+            model.Add(exam_slot[exam] == slot).OnlyEnforceIf(slot_match)
+            model.Add(exam_slot[exam] != slot).OnlyEnforceIf(slot_match.Not())
+
+            #4 is_on_soft_day = day_match AND slot_match
+            model.AddBoolAnd([day_match, slot_match]).OnlyEnforceIf(is_on_soft_day)
+            model.AddBoolOr([day_match.Not(), slot_match.Not()]).OnlyEnforceIf(is_on_soft_day.Not())
+
+            #5 Penalty: 10 if scheduled on soft day
+            penalty = model.NewIntVar(0, 10, f'{exam}_penalty_soft_day_{day}_{slot}')
+            model.Add(penalty == 10).OnlyEnforceIf(is_on_soft_day)
+            model.Add(penalty == 0).OnlyEnforceIf(is_on_soft_day.Not())
+
+            soft_day_penalties.append(penalty)
 
 
-        AEA_students = exam_counts[exam][0]
-        SEQ_students = exam_counts[exam][1]
+    for exam in exams: # Loop through
+                # Calculate capacity's for each room
+        if exam != "MECH70006 Metal Processing Technology":
+            AEA_capacity = sum(
+                rooms[room][1] * exam_room[(exam, room)]
+                for room in rooms if "AEA" in rooms[room][0]
+            )
 
-        # Add Constraint
-        model.Add(AEA_capacity >= AEA_students)
-        model.Add(SEQ_capacity >= SEQ_students)
+            SEQ_capacity = sum(
+                rooms[room][1] * exam_room[(exam, room)]
+                for room in rooms if "SEQ" in rooms[room][0]
+            )
 
-        # Calculate unused seats
-        unused_AEA = model.NewIntVar(0, 10000, f'{exam}_unused_AEA')
-        unused_SEQ = model.NewIntVar(0, 10000, f'{exam}_unused_SEQ')
 
-        model.Add(unused_AEA == AEA_capacity - AEA_students)
-        model.Add(unused_SEQ == SEQ_capacity - SEQ_students)
+            AEA_students = exam_counts[exam][0]
+            SEQ_students = exam_counts[exam][1]
 
-            # Calculate total unused seats
-        total_unused = model.NewIntVar(0, 20000, f'{exam}_total_unused')
-        model.Add(total_unused == unused_AEA + unused_SEQ)
+            # Add Constraint
+            model.Add(AEA_capacity >= AEA_students)
+            model.Add(SEQ_capacity >= SEQ_students)
 
-            # add to list unused
-        unuseds.append(total_unused)
 
-    # Room time conflicts
+    #Ensure only one exam is scheduled in each room at a time
     for d in range(num_days):
         for s in range(num_slots):
             for room in rooms:
                 exams_in_room_time = []
-                for exam in set().union(*student_exams.values()):
+                for exam in exams:
                     # Only consider exams that *can* be scheduled in this day and slot
+                    # Using model variables to express constraints:
+
+                    # Create bool var: exam_at_time = (exam_day == d) AND (exam_slot == s)
                     exam_at_day = model.NewBoolVar(f'{exam}_on_day_{d}')
                     model.Add(exam_day[exam] == d).OnlyEnforceIf(exam_at_day)
                     model.Add(exam_day[exam] != d).OnlyEnforceIf(exam_at_day.Not())
@@ -668,6 +704,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                     model.AddBoolOr([exam_at_day.Not(), exam_at_slot.Not()]).OnlyEnforceIf(exam_at_time.Not())
 
                     # Now combine with room assignment
+                    # If exam assigned to room AND scheduled at this time:
                     assigned_and_scheduled = model.NewBoolVar(f'{exam}_in_{room}_at_{d}_{s}')
                     model.AddBoolAnd([exam_room[(exam, room)], exam_at_time]).OnlyEnforceIf(assigned_and_scheduled)
                     model.AddBoolOr([exam_room[(exam, room)].Not(), exam_at_time.Not()]).OnlyEnforceIf(assigned_and_scheduled.Not())
@@ -677,77 +714,131 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                 # Add AtMostOne constraint: only one exam can be assigned to this room at this time
                 model.AddAtMostOne(exams_in_room_time)
 
-        # Each exam must have at least one room
-    for exam in exams:
-            model.Add(sum(exam_room[(exam, room)] for room in rooms) >= 1)
+    # Ensure computer exams are assigned to a computer room
+    for exam in exams: #1 Loop exams
+            if exam_types[exam] == "PC": #Check exam
+                for room in rooms:
+                    uses = rooms[room][0]  
 
-    model.Minimize(sum(spread_penalties*spread_penalty + extra_time_gr8er_1_day*extra_time_penalty+unuseds*unused_penalty))
+                    if "Computer" not in uses:#3 Check if room can be used as a computer room
+                        #4 add constraint
+                        model.Add(exam_room[(exam, room)] == 0)
+
+    room_surplus = [] #1 Initialize list of surplus
+    for exam in exams:#2 Loop through exams
+            #3 Add constraint the each exam has more than 1 room
+        model.Add(sum(exam_room[(exam, room)] for room in rooms) >= 1)
+        
+        #4Create integer for amount of rooms
+        rooms_len = model.NewIntVar(0, 9, f'rooms for {exam}')
+        
+        model.Add(rooms_len == sum(exam_room[(exam, room)]for room in rooms))
+
+
+        #5 Create penalty variable
+        rooms_penalty = model.NewIntVar(0, 15, f'{exam}_room_surplus_penalty')
+
+        #6 Create Boolean conditions
+        is_room_length_greater_6 = model.NewBoolVar(f'{exam}_has_six_or_more_rooms')
+        is_room_length_5 = model.NewBoolVar(f'{exam}_has_five_rooms')
+        is_room_length_4 = model.NewBoolVar(f'{exam}_has_four_rooms')
+        is_room_length_3 = model.NewBoolVar(f'{exam}_has_three_rooms')
+        
+            #7 Set the true condition
+        model.Add(rooms_len >= 6).OnlyEnforceIf(is_room_length_greater_6)
+        model.Add(rooms_len <= 5).OnlyEnforceIf(is_room_length_greater_6.Not())
+            
+        model.Add(rooms_len == 5).OnlyEnforceIf(is_room_length_5)
+        model.Add(rooms_len != 5).OnlyEnforceIf(is_room_length_5.Not())
+
+        model.Add(rooms_len == 4).OnlyEnforceIf(is_room_length_4)
+        model.Add(rooms_len != 4).OnlyEnforceIf(is_room_length_4.Not())
+            
+        model.Add(rooms_len == 3).OnlyEnforceIf(is_room_length_3)
+        model.Add(rooms_len != 3).OnlyEnforceIf(is_room_length_3.Not())
+
+
+
+        #8 Assign penalty values based gap
+        model.add(rooms_penalty == 15).OnlyEnforceIf(is_room_length_greater_6)
+        model.Add(rooms_penalty == 9).OnlyEnforceIf(is_room_length_5)
+        model.Add(rooms_penalty == 6).OnlyEnforceIf(is_room_length_4)
+        model.Add(rooms_penalty == 4).OnlyEnforceIf(is_room_length_3)
+
+
+        #9 no penalty if less than 3 rooms 
+        model.Add(rooms_penalty == 0).OnlyEnforceIf(
+                    is_room_length_3.Not(), is_room_length_4.Not(), is_room_length_5.Not(), is_room_length_greater_6.Not(),
+                )
+                            #10 Add penalty to total penalties
+        room_surplus.append(rooms_penalty)
+
+
+
+
+
+    model.Minimize(sum(spread_penalties*spread_penalty + soft_day_penalties+   extra_time_25_penalties*extra_time_penalty+room_surplus*room_penalty))
+    sorted_solutions = []
+
     class ExamScheduleCollector(cp_model.CpSolverSolutionCallback):
-            def __init__(self, exam_day, exam_slot, exam_room, exams, rooms, leader_courses, days, slots, max_solutions=10):
-                cp_model.CpSolverSolutionCallback.__init__(self)
-                self.exam_day = exam_day
-                self.exam_slot = exam_slot
-                self.exam_room = exam_room
-                self.exams = exams
-                self.rooms = rooms
-                self.leader_courses = leader_courses
-                self.days = days
-                self.slots = slots
-                self.spread_penalties = spread_penalties or []
-                self.soft_penalties = extra_time_gr8er_1_day or []
-                self.unuseds = unuseds or []
-                self.solutions = []
-                self.max_solutions = max_solutions
+        def __init__(self, exam_day, exam_slot, exam_room, exams, rooms, leader_courses, days, slots, max_solutions=10):
+            cp_model.CpSolverSolutionCallback.__init__(self)
+            self.exam_day = exam_day
+            self.exam_slot = exam_slot
+            self.exam_room = exam_room
+            self.exams = exams
+            self.rooms = rooms
+            self.leader_courses = leader_courses
+            self.days = days
+            self.slots = slots
+            self.spread_penalties = spread_penalties or []
+            self.soft_day_penalties = soft_day_penalties or []
+            self.room_surplus = room_surplus or []
+            self.solutions = []
+            self.max_solutions = max_solutions
 
-            def on_solution_callback(self):
-                schedule = {}
-                for exam in self.exams:
-                    d = self.Value(self.exam_day[exam])
-                    s = self.Value(self.exam_slot[exam])
-                    assigned_rooms = [room for room in self.rooms if self.Value(self.exam_room[(exam, room)]) == 1]
-                    try:
-                        leader = [name for name, exams in self.leader_courses.items() if exam in exams][0]
-                    except IndexError:
-                        leader = "unknown"
-                    schedule[exam] = (d, s, assigned_rooms)
+        def on_solution_callback(self):
+            schedule = {}
+            for exam in self.exams:
+                d = self.Value(self.exam_day[exam])
+                s = self.Value(self.exam_slot[exam])
+                assigned_rooms = [room for room in self.rooms if self.Value(self.exam_room[(exam, room)]) == 1]
+                try:
+                    leader = [name for name, exams in self.leader_courses.items() if exam in exams][0]
+                except IndexError:
+                    leader = "unknown"
+                schedule[exam] = (d, s, assigned_rooms)
 
-            # Calculate total penalty
-                total_penalty = sum(self.Value(v) for v in self.spread_penalties + self.soft_penalties + self.unuseds)
 
+            total_penalty = sum(self.Value(v) for v in self.spread_penalties + self.soft_day_penalties + self.room_surplus )
+            st.write("solution found")
             # Store as (schedule, penalty)
-                self.solutions.append((schedule, total_penalty))
+            self.solutions.append((schedule, total_penalty))
 
-                if len(self.solutions) >= self.max_solutions:
-                    self.StopSearch()
-
-        # Usage:
+            if len(self.solutions) >= self.max_solutions:
+                self.StopSearch()
 
     solver = cp_model.CpSolver()
     solver.parameters.enumerate_all_solutions = True
 
     collector = ExamScheduleCollector(
-            exam_day, exam_slot, exam_room,
-            exams, rooms, leader_courses, days, slots,
-            max_solutions=100
-        )
+        exam_day, exam_slot, exam_room,
+        exams, rooms, leader_courses, days, slots,
+        max_solutions=100
+    )
 
     status = solver.Solve(model, collector)
 
     if status == cp_model.INFEASIBLE:
-            st.error('Infeasible model.')
+        st.error('Infeasible model. Exam schedule could not be created.')
     elif len(collector.solutions) == 0:
-            st.error('No solutions found.')
+        st.error("No solution found.")
     else:
-            st.write(f"Found {len(collector.solutions)} solutions.")
+        # Sort by penalty (ascending)
+        sorted_solutions = sorted(collector.solutions, key=lambda tup: tup[1])
+        return sorted_solutions[0][0], days, exam_counts, exam_types, sorted_solutions[0][1]
 
-            # Sort by penalty (ascending)
-            sorted_solutions = sorted(collector.solutions, key=lambda tup: tup[1])  # tup = (schedule, penalty)
-            return sorted_solutions, days,exam_counts
-
-def generate_excel(sorted_solutions, days,exam_counts):
-    
-    for i, (exams_timetabled,Penalties),  in enumerate(sorted_solutions):
-        # ------------ BUILD data dictionary ------------
+def generate_excel(exams_timetabled, days,exam_counts,exam_types):
         # data[day][slot] = list of (exam_name, rooms)
         data = {}
         for exam, (d, s, room) in exams_timetabled.items():
@@ -759,87 +850,111 @@ def generate_excel(sorted_solutions, days,exam_counts):
         rows = []
         row_meta = []  # will store tuples (day_idx, slot_idx) to track rows for merges and coloring
 
+
         for d_idx, day_name in enumerate(days):
             for s_idx, slot_name in enumerate(['Morning', 'Afternoon']):
                 exams_list = data.get(day_name, {}).get(s_idx, [])
                 if not exams_list:
-                    # No exams this slot — add empty row with '' students and empty room
+                            # No exams this slot — add empty row with '' students and empty room
                     rows.append([day_name, slot_name, '', '', ''])
                     row_meta.append((d_idx, s_idx))
                 else:
                     for exam_name, room in exams_list:
                         room_str = ', '.join(room)
-                        total_students = sum(exam_counts.get(exam_name, [0, 0]))  # safe get
-                        rows.append([day_name, slot_name, exam_name, total_students, room_str])
+                                    #   total_students = sum(exam_counts.get(exam_name, [0, 0]))  
+                        total_students = f'AEA {exam_counts[exam_name][0]}, Non-AEA {exam_counts[exam_name][1]}'
+                        if exam_types[exam_name] == "PC":
+                            type_str = " (Computer)"
+                        elif exam_types[exam_name] == "Standard":
+                            type_str = " (Standard)"
+                        rows.append([day_name, slot_name, exam_name, total_students, room_str,type_str])
                         row_meta.append((d_idx, s_idx))
+                    rows.append([day_name, slot_name, '', '', ''])
+                    row_meta.append((d_idx, s_idx))
 
-        # ------------ SAVE to Excel ------------
-        df = pd.DataFrame(rows, columns=['Date', 'Time', 'Exam', 'Total No of Students', 'Room'])
-        filename = f'exam_schedule_merged{i}.xlsx'
+            # ------------ SAVE to Excel ------------
+        df = pd.DataFrame(rows, columns=['Date', 'Time', 'Exam', 'Total No of Students', 'Room', 'Type'])
+        filename = f'exam_schedule_merged.xlsx'
         df.to_excel(filename, index=False)
 
-        # ------------ LOAD workbook and worksheet ------------
+            # ------------ LOAD workbook and worksheet ------------
         wb = load_workbook(filename)
         ws = wb.active
 
-        # ------------ FUNCTION to merge vertical cells ------------
+            # ------------ FUNCTION to merge vertical cells ------------
         def merge_vertical(col, key_fn):
-            start = 2
-            last_key = key_fn(start)
-            for r in range(3, ws.max_row + 2):
-                key = key_fn(r) if r <= ws.max_row else None
-                if key != last_key:
-                    if r - start > 1:
-                        ws.merge_cells(start_row=start, start_column=col,
+                start = 2
+                last_key = key_fn(start)
+                for r in range(3, ws.max_row + 2):
+                    key = key_fn(r) if r <= ws.max_row else None
+                    if key != last_key:
+                        if r - start > 1:
+                            ws.merge_cells(start_row=start, start_column=col,
                                         end_row=r-1, end_column=col)
-                    start = r
-                    last_key = key
+                        start = r
+                        last_key = key
 
-        # Merge Time cells: merge vertically for consecutive identical (Date, Time) pairs
+            # Merge Time cells: merge vertically for consecutive identical (Date, Time) pairs
         merge_vertical(2, lambda r: (ws.cell(r,1).value, ws.cell(r,2).value))
-        # Merge Date cells: merge vertically across all rows for that day
+            # Merge Date cells: merge vertically across all rows for that day
         merge_vertical(1, lambda r: ws.cell(r, 1).value)
 
 
 
-        # ------------ DEFINE fills ------------
+            # ------------ DEFINE fills ------------
         yellow = PatternFill('solid', fgColor='FFFF54')  # bright yellow for Fixed modules
         red = PatternFill('solid', fgColor='EA3323')     # red-orange for Core modules
         blue = PatternFill('solid', fgColor='E0EAF6')    # light blue for alternating rows
         green = PatternFill('solid', fgColor='CBE9B8')   # light green for alternating rows
 
-        # ------------ APPLY alternating row fills BY DAY ------------
+            # ------------ APPLY alternating row fills BY DAY ------------
         for excel_row, (d_idx, s_idx) in enumerate(row_meta, start=2):  # Excel rows start at 2 (after header)
-            fill = blue if d_idx % 2 == 0 else green
-            for col in range(1, 6):  # columns A(1) to E(5)
-                ws.cell(row=excel_row, column=col).fill = fill
+                fill = blue if d_idx % 2 == 0 else green
+                for col in range(1, 7):  # columns A(1) to E(5)
+                    ws.cell(row=excel_row, column=col).fill = fill
 
-        # ------------ APPLY fixed/core exam coloring (overwrites cols 3-5) ------------
+            # ------------ APPLY fixed/core exam coloring (overwrites cols 3-5) ------------
         for r in range(2, ws.max_row + 1):
-            exam_name = ws.cell(r, 3).value
-            fill = None
-            if exam_name:
-                # Check fixed modules (yellow)
-                if any(exam_name.startswith(fm) for fm in Fixed_modules):
-                    fill = yellow
-                # Check core modules (red) overrides yellow
-                if any(exam_name.startswith(cm) for cm in Core_modules):
-                    fill = red
-            if fill:
-                for c in (3, 4, 5):  # Exam, Total No Students, Room columns
-                    ws.cell(r, c).fill = fill
-        #Centre text
+                exam_name = ws.cell(r, 3).value
+                fill = None
+                if exam_name:
+                    # Check fixed modules (yellow)
+                    if any(exam_name.startswith(fm) for fm in Fixed_modules):
+                        fill = yellow
+                    # Check core modules (red) overrides yellow
+                    if any(exam_name.startswith(cm) for cm in Core_modules):
+                        fill = red
+                if fill:
+                    for c in (3, 4, 5,6):  # Exam, Total No Students, Room columns
+                        ws.cell(r, c).fill = fill
+            #Centre text
 
         for row in range(2, ws.max_row + 1):
-            for col in [1, 2]:
-                cell = ws.cell(row=row, column=col)
-                cell.alignment = Alignment(vertical='center')
-        # ------------ SAVE workbook ------------
+                for col in [1, 2]:
+                    cell = ws.cell(row=row, column=col)
+                    cell.alignment = Alignment(vertical='center')
+                    
+        for col in ws.columns:
+                    max_length = 0
+                    col_letter = col[0].column_letter  # Get the column letter (like 'A')
+
+                    for cell in col:
+                        try:
+                            # Convert cell value to string and get length
+                            cell_length = len(str(cell.value))
+                            if cell_length > max_length:
+                                max_length = cell_length
+                        except:
+                            pass
+
+                    # Set the column width (add a little extra for padding)
+                    ws.column_dimensions[col_letter].width = max_length + 2
+            # ------------ SAVE workbook ------------
         wb.save(filename)
         
 
 
-    st.write(f"Excel file '{filename}' created with merged cells, colors, and full schedule.")
+        st.write(f"Excel file '{filename}' created with merged cells, colors, and full schedule.")
 
 
 def animation_html():
@@ -1058,16 +1173,16 @@ if __name__ == "__main__":
                 error_msg = None
 
                 def generate():
-                    global processing_done, error_msg, students_df, leaders_df
+                    global processing_done, error_msg, students_df, leaders_df, penalties
                     try:
            
 
                         # Generate the timetable
-                        timetable, days, exam_counts = create_timetable(
+                        timetable, days, exam_counts, exam_types, penalties = create_timetable(
                             students_df, leaders_df, wb, max_exams_2days, max_exams_5days,
                         )
                         # Create the Excel file
-                        generate_excel(timetable, days, exam_counts)
+                        generate_excel(timetable, days, exam_counts, exam_types)
                     except Exception as e:
                         error_msg = str(e)
                     finally:
@@ -1091,8 +1206,8 @@ if __name__ == "__main__":
                 else:
                     # Success output
                     st.success("✅ Timetable generated successfully!")
-
-                    with open("exam_schedule_merged0.xlsx", "rb") as file:
+                    st.write(f"Total Penalty: {penalties}")
+                    with open("exam_schedule_merged.xlsx", "rb") as file:
                         st.download_button(
                             label="Download Timetable",
                             data=file,
@@ -1101,7 +1216,7 @@ if __name__ == "__main__":
                         )
 
                     st.header("Generated Timetable")
-                    df = pd.read_excel("exam_schedule_merged0.xlsx")
+                    df = pd.read_excel("exam_schedule_merged.xlsx")
                     st.dataframe(df)
 
             except Exception as e:
