@@ -569,14 +569,13 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                 )
         room_surplus.append(rooms_penalty)
     model.Minimize(sum(spread_penalties*spread_penalty + soft_day_penalties+   extra_time_25_penalties*extra_time_penalty+room_surplus*room_penalty))
-    #### ----- Solve the model ----- ####
+    #### ----- Solve the model ----- ###
     solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = 120 
     status = solver.Solve(model)
-    st.write('model solved')
     if status == cp_model.FEASIBLE or status == cp_model.OPTIMAL:
         exams_timetabled = {}
         for exam in exams:
-            st.write(f"Exam: {exam}")
             d = solver.Value(exam_day[exam])
             s = solver.Value(exam_slot[exam])
             assigned_rooms = [room for room in rooms if solver.Value(exam_room[(exam, room)]) == 1]
@@ -585,23 +584,23 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             except IndexError:
                 leader = "unknown"
             exams_timetabled[exam] = (d, s, assigned_rooms)
-
-            st.session_state.days= days,
-            st.session_state.slots= [0, 1],
-            st.session_state.exams = exams,
-            st.session_state.AEA = AEA,
-            st.session_state.leader_courses = leader_courses,
-            st.session_state.extra_time_students_25 = extra_time_students_25,
-            st.session_state.extra_time_students_50 = extra_time_students_50
-            st.session_state.student_exams = student_exams
-            st.session_state.exam_counts = exam_counts
-            st.session_state.Fixed_modules = Fixed_modules
-            st.session_state.Core_modules = Core_modules
-            st.session_state.rooms = rooms
-            st.session_state.exam_types = exam_types
-
+        st.write('exams_timetabled generated correctly')
+        st.session_state.days= days
+        st.session_state.slots= [0, 1]
+        st.session_state.exams = exams
+        st.session_state.AEA = AEA
+        st.session_state.leader_courses = leader_courses
+        st.session_state.extra_time_students_25 = extra_time_students_25
+        st.session_state.extra_time_students_50 = extra_time_students_50
+        st.session_state.student_exams = student_exams
+        st.session_state.exam_counts = exam_counts
+        st.session_state.Fixed_modules = Fixed_modules
+        st.session_state.Core_modules = Core_modules
+        st.session_state.rooms = rooms
+        st.session_state.exam_types = exam_types
+        st.write('session states generated correctly',)
         total_penalty = sum(solver.Value(v) for v in spread_penalties + soft_day_penalties + room_surplus +extra_time_25_penalties)
-        return exams_timetabled, days, exam_counts, exam_types,total_penalty
+        return exams_timetabled, days, exam_counts, exam_types,total_penalty 
     elif status == cp_model.INFEASIBLE:
         # print infeasible boolean variables index
         st.error('Infeasible model. Exam schedule could not be created.')
@@ -972,7 +971,6 @@ if st.button("Generate Timetable"):
                     error_msg = str(e)
                 finally:
                     processing_done = True
-
             thread = threading.Thread(target=generate)
             thread.start()
 
