@@ -9,7 +9,7 @@ import pickle
 
 
 try:
-    with open("timetable_data.pkl", "rb") as f:
+    with open("exam_data.pkl", "rb") as f:
         data = pickle.load(f)
 
     # Unpack all variables
