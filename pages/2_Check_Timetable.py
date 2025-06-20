@@ -5,32 +5,36 @@ import streamlit as st
 import pandas as pd
 from openpyxl import load_workbook
 from collections import defaultdict
+import pickle
 
 
-# Retrieve variables from session_state
-required_vars = [
-    "days", "slots", "exams", "AEA", "leader_courses", "extra_time_students_25", "extra_time_students_50", "student_exams", "exam_counts", "Fixed_modules", "Core_modules", "rooms", "exam_types"
-]
-for var in required_vars:
-    if var not in st.session_state:
-        st.warning(f"Missing variable in session_state: {var}. Please generate a timetable first.")
+try:
+    with open("timetable_data.pkl", "rb") as f:
+        data = pickle.load(f)
 
-# Only proceed if all variables are present
-if all(var in st.session_state for var in required_vars):
-    days = st.session_state["days"]
-    slots = st.session_state["slots"]
-    exams = st.session_state["exams"]
-    AEA = st.session_state["AEA"]
-    leader_courses = st.session_state["leader_courses"]
-    extra_time_students_25 = st.session_state["extra_time_students_25"]
-    extra_time_students_50 = st.session_state["extra_time_students_50"]
-    student_exams = st.session_state["student_exams"]
-    exam_counts = st.session_state["exam_counts"]
-    Fixed_modules = st.session_state["Fixed_modules"]
-    Core_modules = st.session_state["Core_modules"]
-    rooms = st.session_state["rooms"]
-    exam_types = st.session_state["exam_types"]
+    # Unpack all variables
+    days = data["days"]
+    slots = data["slots"]
+    exams = data["exams"]
+    AEA = data["AEA"]
+    leader_courses = data["leader_courses"]
+    extra_time_students_25 = data["extra_time_students_25"]
+    extra_time_students_50 = data["extra_time_students_50"]
+    student_exams = data["student_exams"]
+    exam_counts = data["exam_counts"]
+    Fixed_modules = data["Fixed_modules"]
+    Core_modules = data["Core_modules"]
+    rooms = data["rooms"]
+    exam_types = data["exam_types"]
 
+    st.success("Timetable data loaded successfully from file!")
+
+except FileNotFoundError:
+    st.warning("Timetable file not found. Please generate a timetable first.")
+except KeyError as e:
+    st.error(f"Missing key in saved data: {e}")
+except Exception as e:
+    st.error(f"Failed to load timetable data: {e}")
     def file_reading(filepath, days, slots):
         df = pd.read_excel(filepath)
         exams_timetabled = {}
