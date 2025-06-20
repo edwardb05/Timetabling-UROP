@@ -584,20 +584,20 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             except IndexError:
                 leader = "unknown"
             exams_timetabled[exam] = (d, s, assigned_rooms)
-        st.write('exams_timetabled generated correctly')
-        st.session_state.days= days
-        st.session_state.slots= [0, 1]
-        st.session_state.exams = exams
-        st.session_state.AEA = AEA
-        st.session_state.leader_courses = leader_courses
-        st.session_state.extra_time_students_25 = extra_time_students_25
-        st.session_state.extra_time_students_50 = extra_time_students_50
-        st.session_state.student_exams = student_exams
-        st.session_state.exam_counts = exam_counts
-        st.session_state.Fixed_modules = Fixed_modules
-        st.session_state.Core_modules = Core_modules
-        st.session_state.rooms = rooms
-        st.session_state.exam_types = exam_types
+        # st.write('exams_timetabled generated correctly')
+        # st.session_state.days= days
+        # st.session_state.slots= [0, 1]
+        # st.session_state.exams = exams
+        # st.session_state.AEA = AEA
+        # st.session_state.leader_courses = leader_courses
+        # st.session_state.extra_time_students_25 = extra_time_students_25
+        # st.session_state.extra_time_students_50 = extra_time_students_50
+        # st.session_state.student_exams = student_exams
+        # st.session_state.exam_counts = exam_counts
+        # st.session_state.Fixed_modules = Fixed_modules
+        # st.session_state.Core_modules = Core_modules
+        # st.session_state.rooms = rooms
+        # st.session_state.exam_types = exam_types
         st.write('session states generated correctly',)
         total_penalty = sum(solver.Value(v) for v in spread_penalties + soft_day_penalties + room_surplus +extra_time_25_penalties)
         return exams_timetabled, days, exam_counts, exam_types,total_penalty 
@@ -937,7 +937,7 @@ st.header("Timetabling Parameters")
 col1, col2 = st.columns(2)
 
 with col1:
-    num_days = st.number_input("Number of Days for Exam Period", min_value=1, max_value=30, value=20)
+    num_days = st.number_input("Number of Days for Exam Period", min_value=1, max_value=30, value=21) -1 # Subtract 1 to match the 0-indexed days in the code
     max_exams_2days = st.number_input("Maximum Exams in 2-Day Window", min_value=1, max_value=5, value=3)
     max_exams_5days = st.number_input("Maximum Exams in 5-Day Window", min_value=1, max_value=10, value=4)
 
