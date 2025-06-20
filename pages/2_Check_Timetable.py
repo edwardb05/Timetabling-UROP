@@ -27,7 +27,7 @@ try:
     rooms = data["rooms"]
     exam_types = data["exam_types"]
 
-    st.success("Timetable data loaded successfully from file!")
+
 
 except FileNotFoundError:
     st.warning("Timetable file not found. Please generate a timetable first.")
@@ -210,12 +210,19 @@ except Exception as e:
 
     uploaded_file = st.file_uploader("Upload a file to check", type=["xlsx", "csv"])
 
-    if st.button("🔍 Check Files"):
-        st.header("🔍 Check Your Files")
-        if uploaded_file is not None:
-            try:
-                st.write("✅ File uploaded successfully!")
-                exams_timetabled = file_reading(uploaded_file, days, slots)
-                file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, leader_courses, extra_time_students_50, exams, AEA,exam_counts)
-            except Exception as e:
-                st.error(f"Error reading file: {e}") 
+
+st.set_page_config(page_title="Check Timetable", layout="wide")
+st.title("Check Your Exam Timetable")
+st.markdown("""This page allows you to check your exam timetable for constraint violations as long as the timetable is formatted like the output of the generator.""")
+
+uploaded_file = st.file_uploader("Upload a file to check", type=["xlsx", "csv"])
+
+if st.button("🔍 Check Files"):
+    st.header("🔍 Check Your Files")
+    if uploaded_file is not None:
+        try:
+            st.write("✅ File uploaded successfully!")
+            exams_timetabled = file_reading(uploaded_file, days, slots)
+            file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, leader_courses, extra_time_students_50, exams, AEA,exam_counts)
+        except Exception as e:
+            st.error(f"Error reading file: {e}") 

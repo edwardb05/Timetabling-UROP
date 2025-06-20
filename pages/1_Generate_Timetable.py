@@ -569,7 +569,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                     is_room_length_3.Not(), is_room_length_4.Not(), is_room_length_5.Not(), is_room_length_greater_6.Not(),
                 )
         room_surplus.append(rooms_penalty)
-    model.Minimize(sum(spread_penalties*spread_penalty + soft_day_penalties+   extra_time_25_penalties*extra_time_penalty+room_surplus*room_penalty))
+    model.Minimize(sum(spread_penalties*spread_penalty + soft_day_penalties*soft_day_penalty+   extra_time_25_penalties*extra_time_penalty+room_surplus*room_penalty))
     #### ----- Solve the model ----- ###
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 120 
@@ -592,8 +592,8 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                 "exams": exams,
                 "AEA": AEA,
                 "leader_courses": leader_courses,
-                "extra_time_25": extra_time_students_25,
-                "extra_time_50": extra_time_students_50,
+                "extra_time_students_25": extra_time_students_25,
+                "extra_time_students_50": extra_time_students_50,
                 "student_exams": student_exams,
                 "exam_counts": exam_counts,
                 "Fixed_modules": Fixed_modules,
@@ -732,7 +732,7 @@ def animation_html():
   .wrapper {
     width: 267px;
     height: 267px;
-    background-color: #98fb98;
+    background-color: #00ff7f;
     border-radius: 50%;
     display: flex;
     justify-content: center;
@@ -773,7 +773,7 @@ def animation_html():
     left: 0;
     width: 100%;
     height: 0%;
-    background: blue;
+    background: #0000cd;
     transition: height 1s ease-in-out;
   }
 
@@ -793,7 +793,7 @@ def animation_html():
     bottom: 0;
     width: 100%;
     height: 0%;
-    background: blue;
+    background: #0000cd;
     transition: height 1s ease-in-out;
   }
 </style>
@@ -913,16 +913,6 @@ def animation_html():
 
 # --- MAIN STREAMLIT UI LOGIC ---
 st.title("Exam Timetabling System")
-st.markdown("""
-This app helps create an optimal exam timetable while considering various constraints like:
-- Student exam conflicts
-- Module leader preferences
-- Special accommodations for students with extra time
-- Fixed exam dates
-- Bank holidays
-- Room assignments
-- AEA requirements
-""")
 
 # File upload section
 st.header("Upload Required Files")
@@ -937,6 +927,8 @@ with col3:
 
 # Parameters section
 st.header("Timetabling Parameters")
+st.markdown(""" Adjust the parameters below to customize the exam scheduling process. These parameters will influence how the exams are distributed across the available days and slots.
+            The sliders on the right represent the weighting of the soft constraints, which can be adjusted to prioritize certain aspects of the timetable generation process.""")
 col1, col2 = st.columns(2)
 
 with col1:
@@ -945,10 +937,10 @@ with col1:
     max_exams_5days = st.number_input("Maximum Exams in 5-Day Window", min_value=1, max_value=10, value=4)
 
 with col2:
-    spread_penalty = st.slider("Module leaders spread out Penalty Weight", min_value=0, max_value=10, value=5)
-    room_penalty = st.slider("More than 2 rooms Penalty Weight", min_value=0, max_value=10, value=5)
-    extra_time_penalty = st.slider("Extra Time Student Penalty Weight", min_value=0, max_value=10, value=5)
-
+    spread_penalty = st.slider("Module leaders exams spread out Penalty Weight", min_value=0, max_value=10, value=5)
+    room_penalty = st.slider("More than 2 rooms per exam Penalty Weight", min_value=0, max_value=10, value=5)
+    extra_time_penalty = st.slider(r"25% Extra Time Students having more than one exam a day Penalty Weight", min_value=0, max_value=10, value=5)
+    soft_day_penalty = st.slider("Soft constraint for no exams on certain days (Week 3 Tuesday and Wednesdnay Morning) Penalty Weight", min_value=0, max_value=10, value=5)
 # Add a generate button
 if st.button("Generate Timetable"):
     students_df, leaders_df, wb = process_files()
