@@ -5,20 +5,7 @@ import streamlit as st
 import pandas as pd
 from openpyxl import load_workbook
 from collections import defaultdict
-import pickle
 
-# Load from disk if any required variable is missing
-required_vars = [
-    "days", "slots", "exams", "AEA", "leader_courses", "extra_time_students_25", "extra_time_students_50", "student_exams", "exam_counts", "Fixed_modules", "Core_modules", "rooms", "exam_types"
-]
-if not all(var in st.session_state for var in required_vars):
-    try:
-        with open("timetable_state.pkl", "rb") as f:
-            state = pickle.load(f)
-            for k, v in state.items():
-                st.session_state[k] = v
-    except Exception as e:
-        st.warning(f"Could not load timetable state from disk: {e}")
 
 # Retrieve variables from session_state
 required_vars = [

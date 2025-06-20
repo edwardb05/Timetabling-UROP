@@ -585,22 +585,21 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             except IndexError:
                 leader = "unknown"
             exams_timetabled[exam] = (d, s, assigned_rooms)
-        with open("timetable_state.pkl", "wb") as f:
-            pickle.dump({
-                "days": days,
-                "slots": [0, 1],
-                "exams": exams,
-                "AEA": AEA,
-                "leader_courses": leader_courses,
-                "extra_time_students_25": extra_time_students_25,
-                "extra_time_students_50": extra_time_students_50,
-                "student_exams": student_exams,
-                "exam_counts": exam_counts,
-                "Fixed_modules": Fixed_modules,
-                "Core_modules": Core_modules,
-                "rooms": rooms,
-                "exam_types": exam_types
-            }, f)
+
+            st.session_state.days= days,
+            st.session_state.slots= [0, 1],
+            st.session_state.exams = exams,
+            st.session_state.AEA = AEA,
+            st.session_state.leader_courses = leader_courses,
+            st.session_state.extra_time_students_25 = extra_time_students_25,
+            st.session_state.extra_time_students_50 = extra_time_students_50
+            st.session_state.student_exams = student_exams
+            st.session_state.exam_counts = exam_counts
+            st.session_state.Fixed_modules = Fixed_modules
+            st.session_state.Core_modules = Core_modules
+            st.session_state.rooms = rooms
+            st.session_state.exam_types = exam_types
+
         total_penalty = sum(solver.Value(v) for v in spread_penalties + soft_day_penalties + room_surplus +extra_time_25_penalties)
         return exams_timetabled, days, exam_counts, exam_types,total_penalty
     elif status == cp_model.INFEASIBLE:
