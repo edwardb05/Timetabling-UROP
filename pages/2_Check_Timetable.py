@@ -209,7 +209,6 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
     else:
         st.write("✅ All constraints satisfied! No violations found.")
 
-uploaded_file = st.file_uploader("Upload a file to check", type=["xlsx", "csv"])
 
 
 st.set_page_config(page_title="Check Timetable", layout="wide")
