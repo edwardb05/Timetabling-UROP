@@ -220,6 +220,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
     ws = wb.active
     bank_holidays = []
     row = 5
+
     while True:
         name = ws[f"F{row}"].value
         date_cell = ws[f"G{row}"].value
@@ -228,6 +229,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
         if isinstance(date_cell, datetime):
             bank_holidays.append((str(name).strip(), date_cell.date()))
         row += 1
+
     # Find Summer Term start date
     summer_start = None
     while row < ws.max_row:
@@ -253,6 +255,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
     if not summer_start:
         st.error("Summer Term start date not found")
         return None
+    
     # Find first Monday
     first_monday = summer_start
     while first_monday.weekday() != 0:
@@ -262,6 +265,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
         if 0 <= delta <= 20:
             no_exam_dates.append([delta, 0])
             no_exam_dates.append([delta, 1])
+
     student_exams = {}
     for _, row in student_rows.iterrows():
         cid = row[0]  # Column A = student CID
@@ -271,6 +275,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                 exams_taken.append(exam_name)
         student_exams[cid] = exams_taken
     student_rows = students_df.iloc[2:, :]  # row index 3 and onward
+    
     days = []
     for i in range(21):
         date = first_monday + timedelta(days=i)
@@ -281,9 +286,12 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
         (student_rows.iloc[:, 3].astype(str).str.strip() != "#N/A")
     )
     AEA = student_rows.loc[valid_aea_mask, student_rows.columns[0]].tolist()
+    
     standardized_names = exams
+
     leader_courses = defaultdict(list)
     exam_types = dict()
+
     for _, row in leaders_df.iterrows():
         leaders = []
         if pd.notna(row['Module Leader (lecturer 1)']):
@@ -306,6 +314,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                 if best_match not in leader_courses[leader]:
                     leader_courses[leader].append(best_match)
     leader_courses = dict(leader_courses)
+
     for exam in exams:
         if exam not in exam_types:
             exam_types[exam] = "Standard"
@@ -330,9 +339,32 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
         exam_day[exam] = model.NewIntVar(0, num_days - 1, f'{exam}_day')
         exam_slot[exam] = model.NewIntVar(0, num_slots - 1, f'{exam}_slot')
     exam_room = {}
+
     for exam in set().union(*student_exams.values()):
         for room in rooms:
             exam_room[(exam, room)] = model.NewBoolVar(f'{exam}_in_{room.replace(" ", "_")}')
+
+#####----Adding constraints ------####
+    # 0. Students can't have exams at the same tiem
+    for student, exs in student_exams.items():
+    #Loops through students
+        for i in range(len(exs)):
+            for j in range(i + 1, len(exs)):
+                exam1 = exs[i]
+                exam2 = exs[j]
+                #Boolean variables for day and slot matches
+                same_day = model.NewBoolVar(f'{exam1}_same_day{exam2}')
+                same_slot = model.NewBoolVar(f'{exam1}_same_slot{exam2}')
+                
+                model.Add(exam_day[exam1] == exam_day[exam2]).OnlyEnforceIf(same_day)
+                model.Add(exam_day[exam1] != exam_day[exam2]).OnlyEnforceIf(same_day.Not())
+
+                model.Add(exam_slot[exam1] == exam_slot[exam2]).OnlyEnforceIf(same_slot)
+                model.Add(exam_slot[exam1] != exam_slot[exam2]).OnlyEnforceIf(same_slot.Not())
+
+                
+
+                model.AddBoolOr([same_day.Not(), same_slot.Not()])
     # 1. Core modules can not have multiple exams on that day
     for student, exs in student_exams.items():
         core_mods = [exam for exam in exs if exam in Core_modules]
@@ -502,6 +534,56 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             model.Add(penalty == 0).OnlyEnforceIf(is_on_soft_day.Not())
             soft_day_penalties.append(penalty)
 
+    #Minimize the amount of exams per slot 
+    soft_slot_penalties = []
+
+    for day in range(15):  #1 First two weeks only
+        for slot in slots:  
+            exams_in_slot = []
+                
+                    # 2 Make a list of all exams in a slot
+            for exam in exams:
+                is_scheduled_day = model.NewBoolVar(f'{exam}_is_on_day{day}')
+                is_scheduled_slot = model.NewBoolVar(f'{exam}_is_on_slot{slot}')
+
+                model.Add(exam_day[exam] == day).OnlyEnforceIf(is_scheduled_day)
+                model.Add(exam_day[exam] != day).OnlyEnforceIf(is_scheduled_day.Not())
+
+                model.Add(exam_slot[exam] == slot).OnlyEnforceIf(is_scheduled_slot)
+                model.Add(exam_slot[exam] != slot).OnlyEnforceIf(is_scheduled_slot.Not())
+                
+                is_scheduled_here = model.NewBoolVar(f'{exam}_on_day{day}_slot{slot}')
+                model.AddBoolAnd([is_scheduled_day, is_scheduled_slot]).OnlyEnforceIf(is_scheduled_here)
+                model.AddBoolOr([is_scheduled_day.Not(), is_scheduled_slot.Not()]).OnlyEnforceIf(is_scheduled_here.Not())
+                exams_in_slot.append(is_scheduled_here)
+
+            # 3 Count number of exams scheduled in this (day, slot)
+            num_exams_here = model.NewIntVar(0, len(exams), f'count_day{day}_slot{slot}')
+            model.Add(num_exams_here == sum(exams_in_slot))
+
+            # 4 Calculate penalties
+            is_three = model.NewBoolVar(f'is_three_day{day}_slot{slot}')
+            is_four_or_more = model.NewBoolVar(f'is_four_plus_day{day}_slot{slot}')
+
+            model.Add(num_exams_here == 3).OnlyEnforceIf(is_three)
+            model.Add(num_exams_here != 3).OnlyEnforceIf(is_three.Not())
+
+            model.Add(num_exams_here >= 4).OnlyEnforceIf(is_four_or_more)
+            model.Add(num_exams_here < 4).OnlyEnforceIf(is_four_or_more.Not())
+
+            #5 Apply penalties
+            penalty_three = model.NewIntVar(0, 5, f'penalty_three_day{day}_slot{slot}')
+            penalty_four = model.NewIntVar(0, 100, f'penalty_four_day{day}_slot{slot}')
+
+            model.Add(penalty_three == 5).OnlyEnforceIf(is_three)
+            model.Add(penalty_three == 0).OnlyEnforceIf(is_three.Not())
+
+            model.Add(penalty_four == 100).OnlyEnforceIf(is_four_or_more)
+            model.Add(penalty_four == 0).OnlyEnforceIf(is_four_or_more.Not())
+
+            soft_slot_penalties.append(penalty_three)
+            soft_slot_penalties.append(penalty_four)
+
     for exam in exams:
         if exam != "MECH70006 Metal Processing Technology":
             AEA_capacity = sum(
@@ -569,7 +651,8 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                     is_room_length_3.Not(), is_room_length_4.Not(), is_room_length_5.Not(), is_room_length_greater_6.Not(),
                 )
         room_surplus.append(rooms_penalty)
-    model.Minimize(sum(spread_penalties*spread_penalty + soft_day_penalties*soft_day_penalty+   extra_time_25_penalties*extra_time_penalty+room_surplus*room_penalty))
+        
+    model.Minimize(sum(spread_penalties*spread_penalty + soft_day_penalties*soft_day_penalty+   extra_time_25_penalties*extra_time_penalty+room_surplus*room_penalty+ soft_slot_penalties))
     #### ----- Solve the model ----- ###
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 120 

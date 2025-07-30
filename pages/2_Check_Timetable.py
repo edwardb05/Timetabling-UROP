@@ -72,7 +72,17 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
             if exam not in schedule:
                 violations.append(f"❌ Exam '{exam}' is not scheduled in the timetable.")
 
-
+        # 0. Students can't have two exams at the same time
+        for student, exams in student_exams.items():
+            for i in range(len(exams)):
+                for j in range(i + 1, len(exams)):
+                    exam1 = exams[i]
+                    exam2 = exams[j]
+                    if exams_timetabled[exam1][0] == exams_timetabled[exam2][0] and exams_timetabled[exam1][1] == exams_timetabled[exam2][1]:
+                        violations.append(
+                            f"❌ Student {student} has two exams '{exam1}' and '{exam2}' at the same time"
+                        )
+    
         for student, exams in student_exams.items():
             day_count = defaultdict(int)
 
