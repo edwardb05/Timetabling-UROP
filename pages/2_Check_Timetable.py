@@ -76,11 +76,11 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
         for student, exs in student_exams.items():
             for i in range(len(exs)):
                 for j in range(i + 1, len(exs)):
-                    exam1 = exams[i]
-                    exam2 = exams[j]
+                    exam1 = exs[i]
+                    exam2 = exs[j]
                     if exams_timetabled[exam1][0] == exams_timetabled[exam2][0] and exams_timetabled[exam1][1] == exams_timetabled[exam2][1]:
                         violations.append(
-                            f"❌ Student {student} has two exams '{exam1}' and '{exam2}' at the same time{exams_timetabled[exam1][1]} amd { exams_timetabled[exam2][1]} "
+                            f"❌ Student {student} has two exams '{exam1}' and '{exam2}' at the same time "
                         )
     
     
