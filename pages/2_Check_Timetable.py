@@ -83,6 +83,7 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
                             f"❌ Student {student} has two exams '{exam1}' and '{exam2}' at the same time"
                         )
     
+    
         for student, exs in student_exams.items():
             day_count = defaultdict(int)
 
