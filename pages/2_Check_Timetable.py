@@ -73,9 +73,9 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
                 violations.append(f"❌ Exam '{exam}' is not scheduled in the timetable.")
 
         # 0. Students can't have two exams at the same time
-        for student, exams in student_exams.items():
-            for i in range(len(exams)):
-                for j in range(i + 1, len(exams)):
+        for student, exs in student_exams.items():
+            for i in range(len(exs)):
+                for j in range(i + 1, len(exs)):
                     exam1 = exams[i]
                     exam2 = exams[j]
                     if exams_timetabled[exam1][0] == exams_timetabled[exam2][0] and exams_timetabled[exam1][1] == exams_timetabled[exam2][1]:
@@ -83,10 +83,10 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
                             f"❌ Student {student} has two exams '{exam1}' and '{exam2}' at the same time"
                         )
     
-        for student, exams in student_exams.items():
+        for student, exs in student_exams.items():
             day_count = defaultdict(int)
 
-            for exam in exams:
+            for exam in exs:
                 if exam in schedule:
                     day = schedule[exam][0]
                     day_count[day] += 1
@@ -100,9 +100,9 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
                             f"❌ Student {student} has more than 3 exams across days {day} and {next_day}"
                         )
 
-        for student, exams in student_exams.items():
+        for student, exs in student_exams.items():
             day_count = defaultdict(int)
-            for exam in exams:
+            for exam in exs:
                 if exam in schedule:
                     day = schedule[exam][0]
                     day_count[day] += 1
@@ -115,9 +115,9 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
                     violations.append(
                         f"❌ Student {student} has more than 4 exams from day {start_day} to {start_day + 4}"
                     )
-        for student, exams in student_exams.items():
-            core_mods = [exam for exam in exams if exam in Core_modules]
-            other_mods = [exam for exam in exams if exam not in Core_modules]
+        for student, exs in student_exams.items():
+            core_mods = [exam for exam in exs if exam in Core_modules]
+            other_mods = [exam for exam in exs if exam not in Core_modules]
             for core_exam in core_mods:
                 core_day = exams_timetabled[core_exam][0]
                 for other_exam in other_mods:
@@ -152,7 +152,28 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
                 for day, count in day_count.items():
                     if count > 1:
                         violations.append(f"⚠️soft warning Student {student} with <=25% extra time has {count} exams on day {day}")
+        
+        
+        #Soft checking theres not more than two exams in any slot in the first week 
+        exam_in_slot = defaultdict(list)
+
+        for exam in exams:
+            day, slot,rooms = schedule[exam]
+
+            if day <= 15:  # First two weeks
+                exam_in_slot[(day, slot)].append(exam)
+
+        # Check for violations
+        for date_slot, scheduled_exams in exam_in_slot.items():
+            if len(scheduled_exams) >= 3:
+                violations.append(
+                    f"⚠️ Soft warning: day/slot {date_slot} has {len(scheduled_exams)} exams scheduled: {scheduled_exams}"
+                )
+
         return violations
+    
+
+
     def check_room_constraints(
         exams_timetabled,      # dict: exam -> (day, slot, [assigned_rooms])
         exam_counts,           # dict: exam -> (AEA_students, SEQ_students)
@@ -196,6 +217,7 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
                             f"❌ Computer-based exam '{exam}' assigned to non-computer room '{room}'"
                         )
         return violations
+    
     violations = check_exam_constraints(
         student_exams=student_exams,
         exams_timetabled=exams_timetabled,
