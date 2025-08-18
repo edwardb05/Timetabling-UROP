@@ -7,7 +7,7 @@ from openpyxl import load_workbook
 from collections import defaultdict
 import pickle
 
-
+#Import data from the generate page in pickle file
 try:
     with open("exam_data.pkl", "rb") as f:
         data = pickle.load(f)
@@ -27,7 +27,7 @@ try:
     rooms = data["rooms"]
     exam_types = data["exam_types"]
 
-
+#Raise errors
 
 except FileNotFoundError:
     st.warning("Timetable file not found. Please generate a timetable first.")
@@ -39,7 +39,7 @@ except Exception as e:
 def file_reading(filepath, days, slots):
     df = pd.read_excel(filepath)
     exams_timetabled = {}
-
+    #Build a dictionary of exams with their day, slot and room
     for _, row in df.iterrows():
         exam_name = row['Exam']
 
@@ -82,8 +82,27 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
                         violations.append(
                             f"❌ Student {student} has two exams '{exam1}' and '{exam2}' at the same time "
                         )
-    
-    
+
+        # 1. Core modules fixed: students cannot have more than one core exam on the same day            
+        for student, exs in student_exams.items():
+            core_mods = [exam for exam in exs if exam in Core_modules]
+            other_mods = [exam for exam in exs if exam not in Core_modules]
+            for core_exam in core_mods:
+                core_day = exams_timetabled[core_exam][0]
+                for other_exam in other_mods:
+                    other_day = exams_timetabled[other_exam][0]
+                    if core_day == other_day:
+                        violations.append(
+                            f"❌ Student {student} has core exam '{core_exam}' and non-core exam '{other_exam}' on the same day ({core_day})"
+                        )
+        
+        # 2. Other modules fixed in date/time (Fixed_modules) 
+        for exam, fixed_slot in Fixed_modules.items():
+            scheduled_slot = [exams_timetabled.get(exam)[0] , exams_timetabled.get(exam)[1]]
+            if scheduled_slot != fixed_slot:
+                violations.append(f"❌ Fixed module '{exam}' is not at the correct time (expected {fixed_slot}, got {scheduled_slot}).")
+
+        # 3. No more than 3 exams in any 2 consecutive days (per student)
         for student, exs in student_exams.items():
             day_count = defaultdict(int)
 
@@ -101,6 +120,7 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
                             f"❌ Student {student} has more than 3 exams across days {day} and {next_day}"
                         )
 
+        # 4. No more than 4 exams in any 5 consecutive weekdays (Monday to Friday)
         for student, exs in student_exams.items():
             day_count = defaultdict(int)
             for exam in exs:
@@ -116,22 +136,16 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
                     violations.append(
                         f"❌ Student {student} has more than 4 exams from day {start_day} to {start_day + 4}"
                     )
-        for student, exs in student_exams.items():
-            core_mods = [exam for exam in exs if exam in Core_modules]
-            other_mods = [exam for exam in exs if exam not in Core_modules]
-            for core_exam in core_mods:
-                core_day = exams_timetabled[core_exam][0]
-                for other_exam in other_mods:
-                    other_day = exams_timetabled[other_exam][0]
-                    if core_day == other_day:
-                        violations.append(
-                            f"❌ Student {student} has core exam '{core_exam}' and non-core exam '{other_exam}' on the same day ({core_day})"
-                        )
+
+
+        # 5. Module leaders cannot have more than one exam in the third week (days 15 to 20 inclusive)                
         week3_days = set(range(15, 21))
         for leader, mods in module_leaders.items():
             exams_in_week3 = [exam for exam in mods if exam in schedule and schedule[exam][0] in week3_days]
             if len(exams_in_week3) > 1:
                 violations.append(f"❌ Module leader {leader} has more than one exam in week 3: {exams_in_week3}")
+
+        # 6. Students with >50% extra time cannot have more than one exam on the same day        
         for student in extra_time_students_50:
             if student not in student_exams:
                 continue
@@ -143,6 +157,8 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
             for day, count in day_count.items():
                 if count > 1:
                     violations.append(f"❌ Student {student} with >50% extra time has {count} exams on day {day}")
+        
+        #7 soft Students with 25% extra time cannot have more than one exam on the same day
         for student in AEA:
             if student not in extra_time_students_50:
                 day_count = defaultdict(int)
@@ -182,19 +198,7 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
         exam_types,              # dict: room_name -> [list of types, capacity]
     ):
         violations = []
-        room_schedule = defaultdict(list)
-        for exam, (day, slot, rooms_) in exams_timetabled.items():
-            for room in rooms_:
-                room_schedule[(day, slot, room)].append(exam)
-        for (day, slot, room), exams_in_room in room_schedule.items():
-            if len(exams_in_room) > 1:
-                violations.append(
-                    f"❌ Room '{room}' double-booked on day {day}, slot {slot} for exams: {exams_in_room}"
-                )
-
-        for exam, (day, slot, rooms) in exams_timetabled.items():
-            if not rooms:
-                violations.append(f"❌ Exam '{exam}' has no assigned room!")
+        # 1. Check room capacity sufficiency per exam
         for exam, (day, slot, rooms) in exams_timetabled.items():
             if exam not in exam_counts:
                 violations.append(f"⚠️ No student count for exam '{exam}', skipping capacity check")
@@ -210,6 +214,18 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
                 violations.append(
                     f"❌ Exam '{exam}' has insufficient SEQ capacity: needed {SEQ_students}, assigned {SEQ_capacity}"
                 )
+        # 2. No room double-booked at same day & slot
+        room_schedule = defaultdict(list)
+        for exam, (day, slot, rooms_) in exams_timetabled.items():
+            for room in rooms_:
+                room_schedule[(day, slot, room)].append(exam)
+        for (day, slot, room), exams_in_room in room_schedule.items():
+            if len(exams_in_room) > 1:
+                violations.append(
+                    f"❌ Room '{room}' double-booked on day {day}, slot {slot} for exams: {exams_in_room}"
+                )
+                
+        # 3. Check computer-based exams are in computer rooms
         for exam, (day, slot, rooms) in exams_timetabled.items():
             if exam_types[exam] == "PC":
                 for room in rooms:
@@ -218,7 +234,12 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
                             f"❌ Computer-based exam '{exam}' assigned to non-computer room '{room}'"
                         )
 
-     # 5 Check non PC exams are not in PC rooms
+        # 4 Check every exam assigned at least one room
+        for exam, (day, slot, rooms) in exams_timetabled.items():
+            if not rooms:
+                violations.append(f"❌ Exam '{exam}' has no assigned room!")
+        
+        # 5 Check non PC exams are not in PC rooms
         for exam, (day, slot, rooms) in exams_timetabled.items():
             if exam_types[exam] != "PC":  # Only check non computer-based exams
                 for room in rooms:

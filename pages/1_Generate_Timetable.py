@@ -609,7 +609,17 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             soft_slot_penalties.append(penalty_three)
             soft_slot_penalties.append(penalty_four)
 
-####--- Must have sufficient room for each exam ---####
+   ####- room constraints - ####
+    # Ensure each non ME exam is assigned room N/A and ME is not assingned this
+    #1 Loop exams
+    for exam in exams:
+        if exam in Fixed_modules and exam not in Core_modules: #2 check if exam is non mech eng
+            model.Add(exam_room[(exam, 'N/A')] ==1)  #3 Assign to N/A room if fixed module
+        else:
+            model.Add(exam_room[(exam, 'N/A')] == 0)  #4 Do not assign to N/A room if not fixed module
+
+
+    #Must have sufficient room for each exam 
     for exam in exams:
         if exam != "MECH70006 Metal Processing Technology":
             AEA_capacity = sum(
