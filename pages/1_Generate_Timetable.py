@@ -91,16 +91,20 @@ def ordinal(n):
 def validate_student_list(df):
     """Validate the student list Excel file format and content."""
     errors = []
+    
     if len(df) < 3:
         errors.append("Student list must have at least 3 rows (header + students)")
         return errors
+    
     if df.iloc[0, 0] != "CID" or df.iloc[0, 3] != "Additional Exam Arrangements AEA":
         errors.append(f"Student list must have 'CID' instead of {df.iloc[0, 0]} in column A and 'AEA' instead of {df.iloc[0, 3]}")
         return errors
+    
     exam_columns = df.iloc[0, 9:].dropna()
     if len(exam_columns) == 0:
         errors.append("No exam columns found starting from column J")
         return errors
+    
     student_rows = df.iloc[2:, :]
     for idx, row in student_rows.iterrows():
         cid = row[0]
@@ -111,18 +115,22 @@ def validate_student_list(df):
             value = str(row[col_idx]).strip().lower()
             if value not in ['x', 'a', 'b', 'nan']:
                 errors.append(f"Invalid exam indicator '{value}' for student {cid} in exam {exam_name}")
+
     return errors
 
 def validate_module_list(df):
     """Validate the module list Excel file format and content."""
     errors = []
+
     if len(df) < 2:
         errors.append("Module list must have at least 2 rows")
         return errors
+    
     required_cols = ['Banner Code (New CR)', 'Module Name', 'Module Leader (lecturer 1)']
     for col in required_cols:
         if col not in df.columns:
             errors.append(f"Missing required column: {col}")
+
     return errors
 
 def validate_useful_dates(wb):
@@ -177,8 +185,12 @@ def process_files():
         if dates_errors:
             st.error("Useful dates errors:\n" + "\n".join(dates_errors))
             return None, None, None
+        
+        #Read exams
         exams = student_df.iloc[0, 9:].dropna().tolist()
         student_rows = student_df.iloc[2:, :]
+    
+        #Form dictionary of each students exams
         student_exams = {}
         for _, row in student_rows.iterrows():
             cid = row[0]
@@ -195,6 +207,7 @@ def process_files():
                             if exam != other_exam and Fixed_modules[exam][0] == Fixed_modules[other_exam][0]:
                                 st.error(f"Core module {exam} conflicts with fixed module {other_exam} on the same day for student {student} so model will be infeasible")
         return student_df, module_df, dates_wb
+    
     except Exception as e:
         st.error(f"Error processing files: {str(e)}")
         return None, None, None
@@ -266,6 +279,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             no_exam_dates.append([delta, 0])
             no_exam_dates.append([delta, 1])
 
+    #Form dictionary of student_exams
     student_exams = {}
     for _, row in student_rows.iterrows():
         cid = row[0]  # Column A = student CID
@@ -276,6 +290,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
         student_exams[cid] = exams_taken
     student_rows = students_df.iloc[2:, :]  # row index 3 and onward
     
+    #Get the list of days from useful dates
     days = []
     for i in range(21):
         date = first_monday + timedelta(days=i)
@@ -285,6 +300,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
         student_rows.iloc[:, 3].notna() &
         (student_rows.iloc[:, 3].astype(str).str.strip() != "#N/A")
     )
+
     AEA = student_rows.loc[valid_aea_mask, student_rows.columns[0]].tolist()
     
     standardized_names = exams
@@ -315,9 +331,12 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                     leader_courses[leader].append(best_match)
     leader_courses = dict(leader_courses)
 
+
     for exam in exams:
         if exam not in exam_types:
             exam_types[exam] = "Standard"
+
+
     exam_counts = defaultdict(lambda: [0, 0])
     for cid, exams_taken in student_exams.items():
         if cid in AEA:
@@ -326,9 +345,13 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
         else:
             for exam in exams_taken:
                 exam_counts[exam][1] += 1
+
     exam_counts = dict(exam_counts)
+
     extra_time_students_25 = students_df[students_df.iloc[:, 3].astype(str).str.startswith(("15min/hour", "25% extra time"))].iloc[:, 0].tolist()
     extra_time_students_50 = students_df[students_df.iloc[:, 3].astype(str).str.startswith(("30min/hour", "50% extra time"))].iloc[:, 0].tolist()
+    
+    #####----- Start running the model----####
     model = cp_model.CpModel()
     slots = [0, 1]
     num_slots = len(slots)
@@ -365,6 +388,8 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                 
 
                 model.AddBoolOr([same_day.Not(), same_slot.Not()])
+
+
     # 1. Core modules can not have multiple exams on that day
     for student, exs in student_exams.items():
         core_mods = [exam for exam in exs if exam in Core_modules]
@@ -584,6 +609,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             soft_slot_penalties.append(penalty_three)
             soft_slot_penalties.append(penalty_four)
 
+####--- Must have sufficient room for each exam ---####
     for exam in exams:
         if exam != "MECH70006 Metal Processing Technology":
             AEA_capacity = sum(
@@ -599,6 +625,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             model.Add(AEA_capacity >= AEA_students)
             model.Add(SEQ_capacity >= SEQ_students)
 
+    #Ensure only one day and slot assigned to each room
     for d in range(num_days):
         for s in range(num_slots):
             for room in rooms:
@@ -607,34 +634,44 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                     exam_at_day = model.NewBoolVar(f'{exam}_on_day_{d}')
                     model.Add(exam_day[exam] == d).OnlyEnforceIf(exam_at_day)
                     model.Add(exam_day[exam] != d).OnlyEnforceIf(exam_at_day.Not())
+
                     exam_at_slot = model.NewBoolVar(f'{exam}_on_slot_{s}')
                     model.Add(exam_slot[exam] == s).OnlyEnforceIf(exam_at_slot)
                     model.Add(exam_slot[exam] != s).OnlyEnforceIf(exam_at_slot.Not())
+
                     exam_at_time = model.NewBoolVar(f'{exam}_on_{d}_{s}')
                     model.AddBoolAnd([exam_at_day, exam_at_slot]).OnlyEnforceIf(exam_at_time)
                     model.AddBoolOr([exam_at_day.Not(), exam_at_slot.Not()]).OnlyEnforceIf(exam_at_time.Not())
+
                     assigned_and_scheduled = model.NewBoolVar(f'{exam}_in_{room}_at_{d}_{s}')
                     model.AddBoolAnd([exam_room[(exam, room)], exam_at_time]).OnlyEnforceIf(assigned_and_scheduled)
                     model.AddBoolOr([exam_room[(exam, room)].Not(), exam_at_time.Not()]).OnlyEnforceIf(assigned_and_scheduled.Not())
+
                     exams_in_room_time.append(assigned_and_scheduled)
                 model.AddAtMostOne(exams_in_room_time)
 
+    #Ensure non computer rooms not used for computer exams
     for exam in exams:
         if exam_types[exam] == "PC":
             for room in rooms:
                 uses = rooms[room][0]
                 if "Computer" not in uses:
                     model.Add(exam_room[(exam, room)] == 0)
+
+    # Minimize amount of rooms used
     room_surplus = []
     for exam in exams:
         model.Add(sum(exam_room[(exam, room)] for room in rooms) >= 1)
         rooms_len = model.NewIntVar(0, 9, f'rooms for {exam}')
+
         model.Add(rooms_len == sum(exam_room[(exam, room)]for room in rooms))
         rooms_penalty = model.NewIntVar(0, 15, f'{exam}_room_surplus_penalty')
+
         is_room_length_greater_6 = model.NewBoolVar(f'{exam}_has_six_or_more_rooms')
         is_room_length_5 = model.NewBoolVar(f'{exam}_has_five_rooms')
         is_room_length_4 = model.NewBoolVar(f'{exam}_has_four_rooms')
         is_room_length_3 = model.NewBoolVar(f'{exam}_has_three_rooms')
+
         model.Add(rooms_len >= 6).OnlyEnforceIf(is_room_length_greater_6)
         model.Add(rooms_len <= 5).OnlyEnforceIf(is_room_length_greater_6.Not())
         model.Add(rooms_len == 5).OnlyEnforceIf(is_room_length_5)
@@ -643,6 +680,7 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
         model.Add(rooms_len != 4).OnlyEnforceIf(is_room_length_4.Not())
         model.Add(rooms_len == 3).OnlyEnforceIf(is_room_length_3)
         model.Add(rooms_len != 3).OnlyEnforceIf(is_room_length_3.Not())
+
         model.add(rooms_penalty == 15).OnlyEnforceIf(is_room_length_greater_6)
         model.Add(rooms_penalty == 9).OnlyEnforceIf(is_room_length_5)
         model.Add(rooms_penalty == 6).OnlyEnforceIf(is_room_length_4)
@@ -651,8 +689,33 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
                     is_room_length_3.Not(), is_room_length_4.Not(), is_room_length_5.Not(), is_room_length_greater_6.Not(),
                 )
         room_surplus.append(rooms_penalty)
-        
-    model.Minimize(sum(spread_penalties*spread_penalty + soft_day_penalties*soft_day_penalty+   extra_time_25_penalties*extra_time_penalty+room_surplus*room_penalty+ soft_slot_penalties))
+    
+
+    #Penalise using pc rooms for non pc exams
+
+    non_pc_exam_penalty = []
+
+    #1 Find computer rooms
+    computer_rooms = [room for room in rooms if "Computer" in rooms[room][0]]
+
+    #2 Loop through exams
+    for exam in exams:
+            #3 if not a PC exams
+        if exam_types[exam] != "PC":
+                #4 Check each computer room
+            for room in computer_rooms:
+                #5 Create a Boolean 
+                penalty_var = model.NewBoolVar(f"non_pc_exam_in_pc_room_{exam}_{room}")
+                
+                #6 Assign penalty 
+                model.Add(exam_room[(exam, room)] == 1).OnlyEnforceIf(penalty_var)
+                model.Add(exam_room[(exam, room)] != 1).OnlyEnforceIf(penalty_var.Not())
+
+                #7 Add penality
+                non_pc_exam_penalty.append(5 * penalty_var)
+            
+    model.Minimize(sum(spread_penalties*spread_penalty + soft_day_penalties*soft_day_penalty+   extra_time_25_penalties*extra_time_penalty+room_surplus*room_penalty+ soft_slot_penalties+ non_pc_exam_penalty))
+   
     #### ----- Solve the model ----- ###
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 120 
@@ -668,6 +731,8 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             except IndexError:
                 leader = "unknown"
             exams_timetabled[exam] = (d, s, assigned_rooms)
+
+        #Save data for nexr page
         with open("exam_data.pkl", "wb") as f:
             pickle.dump({
                 "days": days,
@@ -686,7 +751,8 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
             }, f)
 
         total_penalty = sum(solver.Value(v) for v in spread_penalties + soft_day_penalties + room_surplus +extra_time_25_penalties)
-        return exams_timetabled, days, exam_counts, exam_types,total_penalty 
+        return exams_timetabled, days, exam_counts, exam_types,total_penalty
+    
     elif status == cp_model.INFEASIBLE:
         # print infeasible boolean variables index
         st.error('Infeasible model. Exam schedule could not be created.')

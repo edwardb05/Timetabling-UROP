@@ -217,6 +217,16 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
                         violations.append(
                             f"❌ Computer-based exam '{exam}' assigned to non-computer room '{room}'"
                         )
+
+     # 5 Check non PC exams are not in PC rooms
+        for exam, (day, slot, rooms) in exams_timetabled.items():
+            if exam_types[exam] != "PC":  # Only check non computer-based exams
+                for room in rooms:
+                    if "Computer" in room_dict[room][0]:
+                        violations.append(
+                            f"⚠️ Soft warning: '{exam}' assigned to computer room '{room}' and is not a computer exam"
+                        )
+
         return violations
     
     violations = check_exam_constraints(
