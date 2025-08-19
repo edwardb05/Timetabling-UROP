@@ -56,7 +56,7 @@ Fixed_modules = {"BUSI60039 Business Strategy" :[1,1],
                  "MECH70003 Future Clean Transport Technology":[17,1],
                  "MECH60015/70030 PEN3/AME":[18,1]}
 
-# Room dictionary with capacities and features
+# Room dictionary with capacities and functions
 rooms = {
     'CAGB 203': [["Computer", "SEQ"], 65],
     'CAGB 309': [["SEQ"], 54],

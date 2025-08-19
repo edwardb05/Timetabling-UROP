@@ -220,10 +220,11 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
             for room in rooms_:
                 room_schedule[(day, slot, room)].append(exam)
         for (day, slot, room), exams_in_room in room_schedule.items():
-            if len(exams_in_room) > 1:
-                violations.append(
-                    f"❌ Room '{room}' double-booked on day {day}, slot {slot} for exams: {exams_in_room}"
-                )
+            if room != 'NON ME N/A': 
+                if len(exams_in_room) > 1:
+                    violations.append(
+                        f"❌ Room '{room}' double-booked on day {day}, slot {slot} for exams: {exams_in_room}"
+                    )
                 
         # 3. Check computer-based exams are in computer rooms
         for exam, (day, slot, rooms) in exams_timetabled.items():
