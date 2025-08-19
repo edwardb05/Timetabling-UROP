@@ -61,12 +61,13 @@ rooms = {
     'CAGB 203': [["Computer", "SEQ"], 65],
     'CAGB 309': [["SEQ"], 54],
     'CAGB 649-652': [["SEQ"], 75],
-    'CAGB 747-748': [["SEQ"], 36],
+    'CAGB 747-748': [["SEQ","AEA"], 36],
     'CAGB 749-752': [["SEQ"], 75],
     'CAGB 761': [["Computer", "SEQ","AEA"], 25],
     'CAGB 762': [["Computer", "SEQ","AEA"], 25],
     'CAGB 765': [["AEA","Computer"], 10],
     'CAGB 527': [["AEA"], 2],
+    'NON ME N/A':[["SEQ","AEA"],1000], #For business module
 }
 
 # No exam dates (weekends and last Friday morning)
@@ -611,54 +612,56 @@ def create_timetable(students_df, leaders_df, wb,max_exams_2days, max_exams_5day
 
    ####- room constraints - ####
     # Ensure each non ME exam is assigned room N/A and ME is not assingned this
-    #1 Loop exams
     for exam in exams:
-        if exam in Fixed_modules and exam not in Core_modules: #2 check if exam is non mech eng
-            model.Add(exam_room[(exam, 'N/A')] ==1)  #3 Assign to N/A room if fixed module
+        if exam in Fixed_modules and exam not in Core_modules:
+            model.Add(exam_room[(exam, 'NON ME N/A')] ==1)  # Assign to N/A room if fixed module
         else:
-            model.Add(exam_room[(exam, 'N/A')] == 0)  #4 Do not assign to N/A room if not fixed module
+            model.Add(exam_room[(exam, 'NON ME N/A')] == 0)  # Do not assign to N/A room if not fixed module
 
 
     #Must have sufficient room for each exam 
     for exam in exams:
-        if exam != "MECH70006 Metal Processing Technology":
-            AEA_capacity = sum(
-                rooms[room][1] * exam_room[(exam, room)]
-                for room in rooms if "AEA" in rooms[room][0]
-            )
-            SEQ_capacity = sum(
-                rooms[room][1] * exam_room[(exam, room)]
-                for room in rooms if "SEQ" in rooms[room][0]
-            )
-            AEA_students = exam_counts[exam][0]
-            SEQ_students = exam_counts[exam][1]
-            model.Add(AEA_capacity >= AEA_students)
-            model.Add(SEQ_capacity >= SEQ_students)
+
+        AEA_capacity = sum(
+            rooms[room][1] * exam_room[(exam, room)]
+            for room in rooms if "AEA" in rooms[room][0]
+        )
+        SEQ_capacity = sum(
+            rooms[room][1] * exam_room[(exam, room)]
+            for room in rooms if "SEQ" in rooms[room][0]
+        )
+        AEA_students = exam_counts[exam][0]
+        SEQ_students = exam_counts[exam][1]
+        model.Add(AEA_capacity >= AEA_students)
+        model.Add(SEQ_capacity >= SEQ_students)
 
     #Ensure only one day and slot assigned to each room
     for d in range(num_days):
         for s in range(num_slots):
             for room in rooms:
-                exams_in_room_time = []
-                for exam in exams:
-                    exam_at_day = model.NewBoolVar(f'{exam}_on_day_{d}')
-                    model.Add(exam_day[exam] == d).OnlyEnforceIf(exam_at_day)
-                    model.Add(exam_day[exam] != d).OnlyEnforceIf(exam_at_day.Not())
+                if room == 'NON ME N/A':
+                    continue  # Skip N/A room for this constraint 
+                else:
+                    exams_in_room_time = []
+                    for exam in exams:
+                        exam_at_day = model.NewBoolVar(f'{exam}_on_day_{d}')
+                        model.Add(exam_day[exam] == d).OnlyEnforceIf(exam_at_day)
+                        model.Add(exam_day[exam] != d).OnlyEnforceIf(exam_at_day.Not())
 
-                    exam_at_slot = model.NewBoolVar(f'{exam}_on_slot_{s}')
-                    model.Add(exam_slot[exam] == s).OnlyEnforceIf(exam_at_slot)
-                    model.Add(exam_slot[exam] != s).OnlyEnforceIf(exam_at_slot.Not())
+                        exam_at_slot = model.NewBoolVar(f'{exam}_on_slot_{s}')
+                        model.Add(exam_slot[exam] == s).OnlyEnforceIf(exam_at_slot)
+                        model.Add(exam_slot[exam] != s).OnlyEnforceIf(exam_at_slot.Not())
 
-                    exam_at_time = model.NewBoolVar(f'{exam}_on_{d}_{s}')
-                    model.AddBoolAnd([exam_at_day, exam_at_slot]).OnlyEnforceIf(exam_at_time)
-                    model.AddBoolOr([exam_at_day.Not(), exam_at_slot.Not()]).OnlyEnforceIf(exam_at_time.Not())
+                        exam_at_time = model.NewBoolVar(f'{exam}_on_{d}_{s}')
+                        model.AddBoolAnd([exam_at_day, exam_at_slot]).OnlyEnforceIf(exam_at_time)
+                        model.AddBoolOr([exam_at_day.Not(), exam_at_slot.Not()]).OnlyEnforceIf(exam_at_time.Not())
 
-                    assigned_and_scheduled = model.NewBoolVar(f'{exam}_in_{room}_at_{d}_{s}')
-                    model.AddBoolAnd([exam_room[(exam, room)], exam_at_time]).OnlyEnforceIf(assigned_and_scheduled)
-                    model.AddBoolOr([exam_room[(exam, room)].Not(), exam_at_time.Not()]).OnlyEnforceIf(assigned_and_scheduled.Not())
+                        assigned_and_scheduled = model.NewBoolVar(f'{exam}_in_{room}_at_{d}_{s}')
+                        model.AddBoolAnd([exam_room[(exam, room)], exam_at_time]).OnlyEnforceIf(assigned_and_scheduled)
+                        model.AddBoolOr([exam_room[(exam, room)].Not(), exam_at_time.Not()]).OnlyEnforceIf(assigned_and_scheduled.Not())
 
-                    exams_in_room_time.append(assigned_and_scheduled)
-                model.AddAtMostOne(exams_in_room_time)
+                        exams_in_room_time.append(assigned_and_scheduled)
+                    model.AddAtMostOne(exams_in_room_time)
 
     #Ensure non computer rooms not used for computer exams
     for exam in exams:
