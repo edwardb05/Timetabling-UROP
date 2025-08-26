@@ -874,6 +874,7 @@ def generate_excel(exams_timetabled, days, exam_counts, exam_types):
     wb.save(filename)
     st.write(f"Excel file '{filename}' created with merged cells, colors, and full schedule.")
 
+#Rotating filling animation
 def animation_html():
     return """
     <div class=\"wrapper\">
@@ -1103,6 +1104,7 @@ with col2:
     room_penalty = st.slider("More than 2 rooms per exam Penalty Weight", min_value=0, max_value=10, value=5)
     extra_time_penalty = st.slider(r"25% Extra Time Students having more than one exam a day Penalty Weight", min_value=0, max_value=10, value=5)
     soft_day_penalty = st.slider("Soft constraint for no exams on certain days (Week 3 Tuesday and Wednesdnay Morning) Penalty Weight", min_value=0, max_value=10, value=5)
+
 # Add a generate button
 if st.button("Generate Timetable"):
     students_df, leaders_df, wb = process_files()

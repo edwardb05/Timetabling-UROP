@@ -65,6 +65,7 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
         full_schedule = Fixed_modules.copy()
         full_schedule.update(exams_timetabled)
         return full_schedule
+    
     def check_exam_constraints(student_exams, exams_timetabled, Fixed_modules, Core_modules, module_leaders, extra_time_students_50, exams,AEA,):
         violations = []
         schedule = get_full_schedule(exams_timetabled, Fixed_modules)
@@ -250,7 +251,7 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
                         )
 
         return violations
-    
+    #make list of exam violations
     violations = check_exam_constraints(
         student_exams=student_exams,
         exams_timetabled=exams_timetabled,
@@ -261,7 +262,7 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
         exams = exams,
         AEA = AEA
     )
-
+    #add list of room violations
     violations.extend(check_room_constraints(
         exams_timetabled=exams_timetabled,
         exam_counts=exam_counts,
@@ -275,10 +276,11 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
         st.write("✅ All constraints satisfied! No violations found.")
 
 
-
+#Main Streamlit UI for this page
 st.set_page_config(page_title="Check Timetable", layout="wide")
 st.title("Check Your Exam Timetable")
 st.markdown("""This page allows you to check your exam timetable for constraint violations as long as the timetable is formatted like the output of the generator.""")
+
 
 uploaded_file = st.file_uploader("Upload a file to check", type=["xlsx", "csv"])
 
