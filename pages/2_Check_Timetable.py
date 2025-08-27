@@ -1,6 +1,4 @@
 # Timetable Checking Page
-
-
 import streamlit as st
 import pandas as pd
 from openpyxl import load_workbook
@@ -28,7 +26,6 @@ try:
     exam_types = data["exam_types"]
 
 #Raise errors
-
 except FileNotFoundError:
     st.warning("Timetable file not found. Please generate a timetable first.")
 except KeyError as e:
@@ -37,9 +34,10 @@ except Exception as e:
     st.error(f"Failed to load timetable data: {e}")
 
 def file_reading(filepath, days, slots):
+    #Read the uploaded file into a dataframe
     df = pd.read_excel(filepath)
     exams_timetabled = {}
-    #Build a dictionary of exams with their day, slot and room
+    #Build a dictionary of exams with their day, slot and room from excel timetable
     for _, row in df.iterrows():
         exam_name = row['Exam']
 
@@ -270,6 +268,7 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
         exam_types=exam_types
     ))
     if violations:
+        #Write out the violations found
         for v in violations:
             st.write(v)
     else:

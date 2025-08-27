@@ -25,3 +25,4 @@ The generated timetable includes:
 - Day of the week
 - Time slot (Morning/Afternoon)
 - CSV export option 
+

@@ -34,7 +34,7 @@ Core_modules = ["MECH70001 Nuclear Thermal Hydraulics",
                 "MECH70003 Future Clean Transport Technology",
                 "MECH60015/70030 PEN3/AME"]
 
-# Fixed modules dictionary
+# Fixed modules dictionary , name and date
 Fixed_modules = {"BUSI60039 Business Strategy" :[1,1],
                  "BUSI60046 Project Management":[2,1],
                  "ME-ELEC70098 Optimisation":[3,0],
@@ -67,16 +67,17 @@ rooms = {
     'CAGB 762': [["Computer", "SEQ","AEA"], 25],
     'CAGB 765': [["AEA","Computer"], 10],
     'CAGB 527': [["AEA"], 2],
-    'NON ME N/A':[["SEQ","AEA"],1000], #For business module
+    'NON ME N/A':[["SEQ","AEA"],1000], #For business and non Mech Eng modules
 }
 
 # No exam dates (weekends and last Friday morning)
 no_exam_dates = [
     [5,0], [5,1], [6,0], [6,1],  # First weekend
     [12,0], [12,1], [13,0], [13,1],  # Second weekend
-    [18,0], [19,0], [19,1], [20,0], [20,1]  # Last Friday and weekend
+    [18,0], [19,0], [19,1], [20,0], [20,1]  # Last Friday morning and weekend
 ]
 
+#Days it is preferable to not have an exam on but can if needed
 no_exam_dates_soft = [
     [15,0],# Week 3 tuesday morning
     [16,0], #Week 3 Wednesday morning
