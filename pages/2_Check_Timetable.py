@@ -5,6 +5,11 @@ from openpyxl import load_workbook
 from collections import defaultdict
 import pickle
 
+#Main Streamlit UI for this page
+st.set_page_config(page_title="Check Timetable", layout="wide")
+st.title("Check Your Exam Timetable")
+st.markdown("""This page allows you to check your exam timetable for constraint violations as long as the timetable is formatted like the output of the generator.""")
+
 #Import data from the generate page in pickle file
 try:
     with open("exam_data.pkl", "rb") as f:
@@ -275,10 +280,6 @@ def file_checking(exams_timetabled, Fixed_modules, Core_modules, student_exams, 
         st.write("✅ All constraints satisfied! No violations found.")
 
 
-#Main Streamlit UI for this page
-st.set_page_config(page_title="Check Timetable", layout="wide")
-st.title("Check Your Exam Timetable")
-st.markdown("""This page allows you to check your exam timetable for constraint violations as long as the timetable is formatted like the output of the generator.""")
 
 
 uploaded_file = st.file_uploader("Upload a file to check", type=["xlsx", "csv"])
